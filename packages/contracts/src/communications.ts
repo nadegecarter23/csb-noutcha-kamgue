@@ -1,11 +1,14 @@
 import { z } from 'zod';
-import { idSchema } from './primitives.js';
+import { idSchema, writableUnitsSchema } from './primitives.js';
 export const audienceSchema = z.enum(['ALL', 'STAFF', 'FAMILIES', 'STUDENTS']);
 export const announcementSchema = z.object({
   id: idSchema,
   title: z.string(),
   body: z.string(),
   audience: audienceSchema,
+  /** Cycle visé ; `null` = tout le complexe. */
+  organizationalUnitId: idSchema.nullable(),
+  organizationalUnitName: z.string().nullable(),
   publishedAt: z.string().datetime(),
   expiresAt: z.string().datetime().nullable(),
 });
@@ -46,12 +49,15 @@ export const communicationsOverviewSchema = z.object({
   events: schoolEventSchema.array(),
   homework: homeworkSchema.array(),
   messages: schoolMessageSchema.array(),
+  writable: writableUnitsSchema,
 });
 export const createAnnouncementBodySchema = z
   .object({
     title: z.string().trim().min(3).max(160),
     body: z.string().trim().min(3).max(5000),
     audience: audienceSchema,
+    /** Absent ou `null` : tout le complexe (périmètre global requis). */
+    organizationalUnitId: idSchema.nullable().optional(),
     expiresAt: z.string().datetime().nullable().optional(),
   })
   .strict();

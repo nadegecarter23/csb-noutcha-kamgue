@@ -53,7 +53,21 @@ export const passwordSchema = z
   .min(8, 'Le mot de passe doit contenir au moins 8 caractères.')
   .max(128);
 
+/**
+ * Cycle dans lequel l'utilisateur courant peut écrire. Calculé côté serveur
+ * avec la même règle que la RLS, pour que les formulaires ne proposent jamais
+ * un cycle que la base refuserait.
+ */
+export const unitOptionSchema = z.object({ id: idSchema, code: z.string(), name: z.string() });
+export const writableUnitsSchema = z.object({
+  units: unitOptionSchema.array(),
+  /** Vrai seulement pour un périmètre global : autorise « tout le complexe ». */
+  schoolWide: z.boolean(),
+});
+
 export type Id = z.infer<typeof idSchema>;
+export type UnitOptionDto = z.infer<typeof unitOptionSchema>;
+export type WritableUnitsDto = z.infer<typeof writableUnitsSchema>;
 export type AmountDto = z.infer<typeof amountSchema>;
 export type PhoneDto = z.infer<typeof phoneSchema>;
 export type DateDto = z.infer<typeof dateSchema>;

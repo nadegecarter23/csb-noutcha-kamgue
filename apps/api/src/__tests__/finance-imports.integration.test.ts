@@ -152,6 +152,41 @@ describe('phases 5 à 7', () => {
     expect(discounted?.installments.map((item) => item.amount)).toEqual([66_429, 53_143, 35_428]);
   });
 
+  it('impose un second valideur pour une remise au-dessus du seuil', async () => {
+    const { finance, enrollment } = await configuredEnrollment();
+    const pension = (await finance.enrollmentFees(schoolId, enrollment.id)).find(
+      (item) => item.feeTypeName === 'Pension',
+    );
+    if (!pension) throw new Error('Pension absente.');
+    const discount = await finance.createDiscount(schoolId, actorId, {
+      studentFeeAssignmentId: pension.id,
+      type: 'FIXED_AMOUNT',
+      value: 30_000,
+      reason: 'Remise exceptionnelle',
+      category: 'BOURSE',
+    });
+    expect(discount.status).toBe('PENDING_APPROVAL');
+    await expect(finance.decideDiscount(schoolId, actorId, discount.id, true)).rejects.toThrow(
+      /ne peut pas l’approuver/,
+    );
+    const approverId = (
+      await db.user.create({
+        data: {
+          firstName: 'Paul',
+          lastName: 'Direction',
+          phone: '+237699123124',
+          status: 'ACTIVE',
+        },
+      })
+    ).id;
+    await finance.decideDiscount(schoolId, approverId, discount.id, true);
+    const fees = await finance.enrollmentFees(schoolId, enrollment.id);
+    expect(fees.find((item) => item.id === pension.id)?.finalAmount).toBe(145_000);
+    await expect(finance.decideDiscount(schoolId, approverId, discount.id, false)).rejects.toThrow(
+      /n’attend pas de décision/,
+    );
+  });
+
   it('alloue 100 000 en priorité, rapproche les vues, produit un reçu puis contrepassse', async () => {
     const { audit, finance, enrollment } = await configuredEnrollment();
     const payments = createPaymentsService(db, audit);

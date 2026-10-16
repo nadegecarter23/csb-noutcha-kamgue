@@ -10,7 +10,30 @@ import type { AuditService } from '../../platform/audit.js';
 import { AuditAction } from '../../platform/audit.js';
 import { errors } from '../../platform/errors.js';
 import { withSchoolScope } from '../../platform/school-scope.js';
+import { assertWritableUnit, writableUnits } from '../../platform/writable-units.js';
 const iso = (v: Date) => v.toISOString();
+const announcementInclude = { organizationalUnit: { select: { name: true } } } as const;
+function announcementDto(row: {
+  id: string;
+  title: string;
+  body: string;
+  audience: 'ALL' | 'STAFF' | 'FAMILIES' | 'STUDENTS';
+  organizationalUnitId: string | null;
+  organizationalUnit: { name: string } | null;
+  publishedAt: Date;
+  expiresAt: Date | null;
+}) {
+  return {
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    audience: row.audience,
+    organizationalUnitId: row.organizationalUnitId,
+    organizationalUnitName: row.organizationalUnit?.name ?? null,
+    publishedAt: iso(row.publishedAt),
+    expiresAt: row.expiresAt ? iso(row.expiresAt) : null,
+  };
+}
 export function createCommunicationsService(db: Database, audit: AuditService) {
   return {
     async overview(
@@ -19,9 +42,11 @@ export function createCommunicationsService(db: Database, audit: AuditService) {
       academicYearId: string,
     ): Promise<CommunicationsOverviewDto> {
       return withSchoolScope(db, schoolId, async (tx) => {
-        const [announcements, events, homework, messages] = await Promise.all([
+        const [announcements, events, homework, messages, writable] = await Promise.all([
+          // La RLS ne laisse voir que les annonces du complexe et des cycles autorisés.
           tx.announcement.findMany({
             where: { schoolId, OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }] },
+            include: announcementInclude,
             orderBy: { publishedAt: 'desc' },
             take: 30,
           }),
@@ -41,6 +66,7 @@ export function createCommunicationsService(db: Database, audit: AuditService) {
             orderBy: { sentAt: 'desc' },
             take: 100,
           }),
+          writableUnits(tx, schoolId),
         ]);
         const ids = [...new Set(messages.flatMap((x) => [x.senderUserId, x.recipientUserId]))];
         const users = await tx.user.findMany({
@@ -49,11 +75,7 @@ export function createCommunicationsService(db: Database, audit: AuditService) {
         });
         const names = new Map(users.map((x) => [x.id, `${x.firstName} ${x.lastName}`]));
         return {
-          announcements: announcements.map((x) => ({
-            ...x,
-            publishedAt: iso(x.publishedAt),
-            expiresAt: x.expiresAt ? iso(x.expiresAt) : null,
-          })),
+          announcements: announcements.map(announcementDto),
           events: events.map((x) => ({ ...x, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt) })),
           homework: homework.map((x) => ({
             id: x.id,
@@ -74,20 +96,29 @@ export function createCommunicationsService(db: Database, audit: AuditService) {
             sentAt: iso(x.sentAt),
             readAt: x.readAt ? iso(x.readAt) : null,
           })),
+          writable,
         };
       });
     },
     async announce(schoolId: string, userId: string, input: CreateAnnouncementBody) {
       return withSchoolScope(db, schoolId, async (tx) => {
+        const organizationalUnitId = input.organizationalUnitId ?? null;
+        if (organizationalUnitId) await assertWritableUnit(tx, schoolId, organizationalUnitId);
+        else if (!(await writableUnits(tx, schoolId)).schoolWide)
+          throw errors.forbidden(
+            'Seul un périmètre global peut publier pour tout le complexe. Choisissez un cycle.',
+          );
         const row = await tx.announcement.create({
           data: {
             schoolId,
             createdByUserId: userId,
+            organizationalUnitId,
             title: input.title,
             body: input.body,
             audience: input.audience,
             ...(input.expiresAt && { expiresAt: new Date(input.expiresAt) }),
           },
+          include: announcementInclude,
         });
         await audit.log(
           {
@@ -99,11 +130,7 @@ export function createCommunicationsService(db: Database, audit: AuditService) {
           },
           tx,
         );
-        return {
-          ...row,
-          publishedAt: iso(row.publishedAt),
-          expiresAt: row.expiresAt ? iso(row.expiresAt) : null,
-        };
+        return announcementDto(row);
       });
     },
     async event(schoolId: string, input: CreateSchoolEventBody) {

@@ -99,6 +99,7 @@ export const ROLES: readonly RoleDefinition[] = [
       'expenses.create',
       'expenses.approve',
       'expenses.pay',
+      'budgets.manage',
       'students.read',
       'students.create',
       'students.update',
@@ -250,6 +251,7 @@ export const ROLES: readonly RoleDefinition[] = [
       'expenses.read',
       'expenses.create',
       'expenses.pay',
+      'budgets.manage',
     ],
   },
 

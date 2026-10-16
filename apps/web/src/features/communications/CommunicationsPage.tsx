@@ -61,6 +61,8 @@ export function CommunicationsPage() {
           title: String(f.get('title')),
           body: String(f.get('body')),
           audience: String(f.get('audience')),
+          // Vide = tout le complexe, réservé au périmètre global.
+          organizationalUnitId: String(f.get('unit') ?? '') || null,
           expiresAt: f.get('expires') ? new Date(String(f.get('expires'))).toISOString() : null,
         },
       });
@@ -153,10 +155,31 @@ export function CommunicationsPage() {
             </label>
           ) : null}
           {tab === 'news' ? (
-            <label>
-              Expiration
-              <input name="expires" type="datetime-local" />
-            </label>
+            <>
+              <label>
+                Cycle concerné
+                <select
+                  name="unit"
+                  defaultValue={
+                    data.data?.writable.schoolWide ? '' : data.data?.writable.units[0]?.id
+                  }
+                  required={!data.data?.writable.schoolWide}
+                >
+                  {data.data?.writable.schoolWide ? (
+                    <option value="">Tout le complexe</option>
+                  ) : null}
+                  {data.data?.writable.units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Expiration
+                <input name="expires" type="datetime-local" />
+              </label>
+            </>
           ) : null}
           {tab === 'calendar' ? (
             <>
@@ -233,7 +256,12 @@ export function CommunicationsPage() {
           data.data?.announcements.map((x) => (
             <article key={x.id}>
               <header>
-                <span>{audience[x.audience]}</span>
+                <span>
+                  {audience[x.audience]}
+                  <em className="announcement-unit">
+                    {x.organizationalUnitName ?? 'Tout le complexe'}
+                  </em>
+                </span>
                 <time>{new Date(x.publishedAt).toLocaleDateString('fr-CM')}</time>
               </header>
               <h2>{x.title}</h2>

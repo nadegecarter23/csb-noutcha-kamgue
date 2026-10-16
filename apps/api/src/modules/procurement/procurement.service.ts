@@ -7,6 +7,7 @@ import type {
   PayExpenseBody,
   ProcurementOverviewDto,
   UpdateSupplierBody,
+  UpsertBudgetBody,
   WorkflowDecisionBody,
 } from '@cplan/contracts';
 import type { Database } from '../../platform/db.js';
@@ -15,15 +16,19 @@ import type { Storage } from '../../platform/storage.js';
 import { AuditAction } from '../../platform/audit.js';
 import { errors } from '../../platform/errors.js';
 import { withSchoolScope } from '../../platform/school-scope.js';
+import { assertWritableUnit, writableUnits } from '../../platform/writable-units.js';
 
 const number = (value: bigint | null | undefined) => Number(value ?? 0n);
 const date = (value: Date) => value.toISOString().slice(0, 10);
 const iso = (value: Date | null) => value?.toISOString() ?? null;
+const unitName = { select: { name: true } } as const;
 const purchaseInclude = {
+  organizationalUnit: unitName,
   supplier: true,
   lines: { orderBy: { id: 'asc' as const } },
 } satisfies Prisma.PurchaseOrderInclude;
 const expenseInclude = {
+  organizationalUnit: unitName,
   supplier: true,
   category: true,
   purchaseOrder: true,
@@ -50,6 +55,8 @@ function purchaseDto(row: PurchaseRow, names: Map<string, string>) {
   return {
     id: row.id,
     reference: row.reference,
+    organizationalUnitId: row.organizationalUnitId,
+    organizationalUnitName: row.organizationalUnit?.name ?? null,
     supplierId: row.supplierId,
     supplierName: row.supplier.name,
     status: row.status,
@@ -76,6 +83,8 @@ function expenseDto(row: ExpenseRow, names: Map<string, string>) {
   return {
     id: row.id,
     reference: row.reference,
+    organizationalUnitId: row.organizationalUnitId,
+    organizationalUnitName: row.organizationalUnit?.name ?? null,
     supplierId: row.supplierId,
     supplierName: row.supplier.name,
     categoryId: row.categoryId,
@@ -111,22 +120,54 @@ function expenseDto(row: ExpenseRow, names: Map<string, string>) {
 export function createProcurementService(db: Database, audit: AuditService, storage: Storage) {
   async function overview(schoolId: string): Promise<ProcurementOverviewDto> {
     return withSchoolScope(db, schoolId, async (tx) => {
-      const [suppliers, categories, purchaseOrders, expenses] = await Promise.all([
-        tx.supplier.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
-        tx.expenseCategory.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
-        tx.purchaseOrder.findMany({
-          where: { schoolId },
-          include: purchaseInclude,
-          orderBy: { createdAt: 'desc' },
-          take: 200,
-        }),
-        tx.expense.findMany({
-          where: { schoolId },
-          include: expenseInclude,
-          orderBy: { createdAt: 'desc' },
-          take: 300,
-        }),
-      ]);
+      const [suppliers, categories, purchaseOrders, expenses, budgets, consumption, writable] =
+        await Promise.all([
+          tx.supplier.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
+          tx.expenseCategory.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
+          tx.purchaseOrder.findMany({
+            where: { schoolId },
+            include: purchaseInclude,
+            orderBy: { createdAt: 'desc' },
+            take: 200,
+          }),
+          tx.expense.findMany({
+            where: { schoolId },
+            include: expenseInclude,
+            orderBy: { createdAt: 'desc' },
+            take: 300,
+          }),
+          tx.budget.findMany({
+            where: { schoolId, status: 'ACTIVE' },
+            include: {
+              organizationalUnit: { select: { name: true, orderIndex: true } },
+              lines: { include: { expenseCategory: { select: { name: true } } } },
+            },
+            orderBy: [{ fiscalYear: 'desc' }, { organizationalUnit: { orderIndex: 'asc' } }],
+          }),
+          // Consommation budgétaire : dépenses engagées (approuvées ou payées) par
+          // cycle, catégorie et année de facture. La RLS limite aux cycles visibles.
+          tx.$queryRaw<
+            Array<{
+              unitId: string;
+              categoryId: string;
+              year: number;
+              committed: bigint;
+              paid: bigint;
+            }>
+          >`
+          SELECT organizational_unit_id AS "unitId", category_id AS "categoryId",
+                 EXTRACT(YEAR FROM invoice_date)::int AS year,
+                 SUM(amount)::bigint AS committed, SUM(paid_amount)::bigint AS paid
+          FROM expenses
+          WHERE school_id = ${schoolId}::uuid
+            AND organizational_unit_id IS NOT NULL
+            AND status::text IN ('APPROVED', 'PARTIALLY_PAID', 'PAID')
+          GROUP BY 1, 2, 3`,
+          writableUnits(tx, schoolId),
+        ]);
+      const consumed = new Map(
+        consumption.map((row) => [`${row.unitId}:${row.categoryId}:${row.year}`, row]),
+      );
       const userIds = [
         ...new Set([
           ...purchaseOrders.flatMap((x) => [
@@ -188,6 +229,37 @@ export function createProcurementService(db: Database, audit: AuditService, stor
         })),
         purchaseOrders: purchaseOrders.map((x) => purchaseDto(x, names)),
         expenses: expenses.map((x) => expenseDto(x, names)),
+        budgets: budgets.map((budget) => {
+          const lines = budget.lines
+            .map((line) => {
+              const used = consumed.get(
+                `${budget.organizationalUnitId}:${line.expenseCategoryId}:${budget.fiscalYear}`,
+              );
+              const plannedAmount = number(line.plannedAmount);
+              const committedAmount = number(used?.committed);
+              return {
+                categoryId: line.expenseCategoryId,
+                categoryName: line.expenseCategory.name,
+                plannedAmount,
+                committedAmount,
+                paidAmount: number(used?.paid),
+                remainingAmount: plannedAmount - committedAmount,
+              };
+            })
+            .sort((a, b) => a.categoryName.localeCompare(b.categoryName, 'fr'));
+          return {
+            id: budget.id,
+            organizationalUnitId: budget.organizationalUnitId,
+            organizationalUnitName: budget.organizationalUnit.name,
+            fiscalYear: budget.fiscalYear,
+            name: budget.name,
+            plannedTotal: lines.reduce((sum, line) => sum + line.plannedAmount, 0),
+            committedTotal: lines.reduce((sum, line) => sum + line.committedAmount, 0),
+            paidTotal: lines.reduce((sum, line) => sum + line.paidAmount, 0),
+            lines,
+          };
+        }),
+        writable,
       };
     });
   }
@@ -205,6 +277,54 @@ export function createProcurementService(db: Database, audit: AuditService, stor
   }
   return {
     overview,
+    async upsertBudget(schoolId: string, input: UpsertBudgetBody) {
+      const budgetId = await withSchoolScope(db, schoolId, async (tx) => {
+        await assertWritableUnit(tx, schoolId, input.organizationalUnitId);
+        const categoryIds = input.lines.map((line) => line.categoryId);
+        const categories = await tx.expenseCategory.count({
+          where: { schoolId, id: { in: categoryIds } },
+        });
+        if (categories !== categoryIds.length)
+          throw errors.validation('Une catégorie de dépense est introuvable.');
+        const budget = await tx.budget.upsert({
+          where: {
+            organizationalUnitId_fiscalYear: {
+              organizationalUnitId: input.organizationalUnitId,
+              fiscalYear: input.fiscalYear,
+            },
+          },
+          create: {
+            schoolId,
+            organizationalUnitId: input.organizationalUnitId,
+            fiscalYear: input.fiscalYear,
+            name: input.name,
+          },
+          update: { name: input.name, status: 'ACTIVE' },
+        });
+        await tx.budgetLine.deleteMany({ where: { budgetId: budget.id } });
+        await tx.budgetLine.createMany({
+          data: input.lines.map((line) => ({
+            budgetId: budget.id,
+            expenseCategoryId: line.categoryId,
+            plannedAmount: BigInt(line.plannedAmount),
+          })),
+        });
+        await audit.log(
+          {
+            action: AuditAction.BUDGET_SAVED,
+            entityType: 'budget',
+            entityId: budget.id,
+            schoolId,
+            after: input,
+          },
+          tx,
+        );
+        return budget.id;
+      });
+      const budget = (await overview(schoolId)).budgets.find((item) => item.id === budgetId);
+      if (!budget) throw errors.notFound('Budget introuvable.');
+      return budget;
+    },
     async uploadDocument(
       schoolId: string,
       actorId: string,
@@ -343,6 +463,7 @@ export function createProcurementService(db: Database, audit: AuditService, stor
     },
     async createPurchase(schoolId: string, actorId: string, input: CreatePurchaseOrderBody) {
       const id = await withSchoolScope(db, schoolId, async (tx) => {
+        await assertWritableUnit(tx, schoolId, input.organizationalUnitId);
         const supplier = await tx.supplier.findFirst({
           where: { id: input.supplierId, schoolId, status: 'ACTIVE' },
         });
@@ -356,6 +477,7 @@ export function createProcurementService(db: Database, audit: AuditService, stor
         const row = await tx.purchaseOrder.create({
           data: {
             schoolId,
+            organizationalUnitId: input.organizationalUnitId,
             reference,
             supplierId: supplier.id,
             subtotal: BigInt(total),
@@ -380,7 +502,12 @@ export function createProcurementService(db: Database, audit: AuditService, stor
             entityType: 'purchase_order',
             entityId: row.id,
             schoolId,
-            after: { reference, total, lineCount: input.lines.length },
+            after: {
+              reference,
+              total,
+              lineCount: input.lines.length,
+              organizationalUnitId: input.organizationalUnitId,
+            },
           },
           tx,
         );
@@ -479,6 +606,7 @@ export function createProcurementService(db: Database, audit: AuditService, stor
     },
     async createExpense(schoolId: string, actorId: string, input: CreateExpenseBody) {
       const id = await withSchoolScope(db, schoolId, async (tx) => {
+        await assertWritableUnit(tx, schoolId, input.organizationalUnitId);
         const [supplier, category, order, file] = await Promise.all([
           tx.supplier.findFirst({ where: { id: input.supplierId, schoolId, status: 'ACTIVE' } }),
           tx.expenseCategory.findFirst({
@@ -501,6 +629,8 @@ export function createProcurementService(db: Database, audit: AuditService, stor
             !['APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(order.status))
         )
           throw errors.validation('Le bon d’achat ne correspond pas à cette facture.');
+        if (order && order.organizationalUnitId !== input.organizationalUnitId)
+          throw errors.validation('La dépense doit être imputée au cycle de son bon d’achat.');
         if (input.attachmentFileId && !file)
           throw errors.validation('La pièce justificative est invalide.');
         if (order) {
@@ -515,6 +645,7 @@ export function createProcurementService(db: Database, audit: AuditService, stor
         const row = await tx.expense.create({
           data: {
             schoolId,
+            organizationalUnitId: input.organizationalUnitId,
             reference,
             supplierId: supplier.id,
             categoryId: category.id,
@@ -623,6 +754,10 @@ export function createProcurementService(db: Database, audit: AuditService, stor
         if (!expense) throw errors.notFound('Dépense introuvable.');
         if (!['APPROVED', 'PARTIALLY_PAID'].includes(expense.status))
           throw errors.conflict('Cette dépense n’est pas payable.');
+        if (!expense.organizationalUnitId)
+          throw errors.conflict(
+            'Cette dépense n’est rattachée à aucun cycle ; elle ne peut pas être payée.',
+          );
         if (input.amount > number(expense.amount - expense.paidAmount))
           throw errors.validation('Le paiement dépasse le solde fournisseur.');
         if (new Date(input.paidAt) > new Date())
@@ -641,12 +776,16 @@ export function createProcurementService(db: Database, audit: AuditService, stor
             throw errors.conflict(
               'Une session de caisse ouverte par l’utilisateur est obligatoire.',
             );
+          // Chaque cycle a sa caisse : pas de décaissement sur la caisse d’un autre cycle.
+          if (session.organizationalUnitId !== expense.organizationalUnitId)
+            throw errors.conflict('La session de caisse doit appartenir au cycle de la dépense.');
           cashSessionId = session.id;
         }
         const reference = await nextReference(tx, schoolId, 'SUPPLIER_PAYMENT', 'PAF');
         const payment = await tx.supplierPayment.create({
           data: {
             schoolId,
+            organizationalUnitId: expense.organizationalUnitId,
             expenseId: id,
             reference,
             amount: BigInt(input.amount),

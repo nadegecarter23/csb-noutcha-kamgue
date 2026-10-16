@@ -1,11 +1,18 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ExpenseDto, ProcurementOverviewDto, SupplierDto } from '@cplan/contracts';
+import type {
+  BudgetDto,
+  ExpenseDto,
+  ProcurementOverviewDto,
+  SupplierDto,
+  WritableUnitsDto,
+} from '@cplan/contracts';
 import { api, apiUpload } from '@/shared/api/client';
 import { useAuthStore } from '@/features/auth/auth-store';
+import { useScopeStore } from '@/features/scope/scope-store';
 
-type Tab = 'overview' | 'expenses' | 'purchases' | 'suppliers';
-type Modal = 'supplier' | 'category' | 'purchase' | 'expense' | 'payment' | null;
+type Tab = 'overview' | 'expenses' | 'purchases' | 'budgets' | 'suppliers';
+type Modal = 'supplier' | 'category' | 'purchase' | 'expense' | 'payment' | 'budget' | null;
 type PurchaseLine = { description: string; quantity: number; unitPrice: number };
 const money = (value: number) =>
   new Intl.NumberFormat('fr-CM', {
@@ -38,6 +45,9 @@ export function ProcurementPage() {
   const [selectedExpense, setSelectedExpense] = useState<ExpenseDto | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierDto | null>(null);
   const [query, setQuery] = useState('');
+  const [formUnitId, setFormUnitId] = useState('');
+  const [selectedBudget, setSelectedBudget] = useState<BudgetDto | null>(null);
+  const activeScopeUnitId = useScopeStore((s) => s.active?.organizationalUnitId ?? null);
   const [lines, setLines] = useState<PurchaseLine[]>([
     { description: '', quantity: 1, unitPrice: 0 },
   ]);
@@ -56,15 +66,18 @@ export function ProcurementPage() {
       path: string;
       body?: unknown;
       key?: string;
-      method?: 'post' | 'patch';
+      method?: 'post' | 'patch' | 'put';
     }) =>
       method === 'patch'
         ? api.patch(path, body)
-        : api.post(path, body, key ? { idempotencyKey: key } : undefined),
+        : method === 'put'
+          ? api.put(path, body)
+          : api.post(path, body, key ? { idempotencyKey: key } : undefined),
     onSuccess: () => {
       setModal(null);
       setSelectedExpense(null);
       setSelectedSupplier(null);
+      setSelectedBudget(null);
       refresh();
     },
   });
@@ -87,6 +100,14 @@ export function ProcurementPage() {
     [overview.data, query],
   );
   const act = (path: string, body?: unknown) => mutation.mutate({ path, body });
+  // Cycle proposé par défaut : celui du périmètre actif, sinon le premier autorisé.
+  const openWithUnit = (next: Modal, unitId?: string) => {
+    const units = overview.data?.writable.units ?? [];
+    setFormUnitId(
+      unitId ?? units.find((unit) => unit.id === activeScopeUnitId)?.id ?? units[0]?.id ?? '',
+    );
+    setModal(next);
+  };
   const reject = (path: string) => {
     const reason = window.prompt('Motif du rejet (obligatoire)');
     if (reason?.trim()) act(path, { decision: 'REJECT', reason: reason.trim() });
@@ -127,6 +148,7 @@ export function ProcurementPage() {
       mutation.mutate({
         path: '/purchase-orders',
         body: {
+          organizationalUnitId: formUnitId,
           supplierId: String(f.get('supplierId')),
           expectedDate: String(f.get('expectedDate')) || null,
           notes: String(f.get('notes')) || null,
@@ -144,6 +166,7 @@ export function ProcurementPage() {
       mutation.mutate({
         path: '/expenses',
         body: {
+          organizationalUnitId: formUnitId,
           supplierId: String(f.get('supplierId')),
           categoryId: String(f.get('categoryId')),
           purchaseOrderId: String(f.get('purchaseOrderId')) || null,
@@ -153,6 +176,24 @@ export function ProcurementPage() {
           description: String(f.get('description')),
           amount: Number(f.get('amount')),
           attachmentFileId,
+        },
+      });
+    }
+    if (modal === 'budget') {
+      const budgetLines = (overview.data?.categories ?? [])
+        .map((category) => ({
+          categoryId: category.id,
+          plannedAmount: Number(f.get(`planned-${category.id}`) || 0),
+        }))
+        .filter((line) => line.plannedAmount > 0);
+      mutation.mutate({
+        path: '/budgets',
+        method: 'put',
+        body: {
+          organizationalUnitId: formUnitId,
+          fiscalYear: Number(f.get('fiscalYear')),
+          name: String(f.get('name')),
+          lines: budgetLines,
         },
       });
     }
@@ -197,7 +238,7 @@ export function ProcurementPage() {
             </button>
           ) : null}
           {can('expenses.create') ? (
-            <button className="button-primary" onClick={() => setModal('expense')}>
+            <button className="button-primary" onClick={() => openWithUnit('expense')}>
               + Saisir une dépense
             </button>
           ) : null}
@@ -209,6 +250,7 @@ export function ProcurementPage() {
             ['overview', 'Vue d’ensemble'],
             ['expenses', 'Dépenses'],
             ['purchases', 'Achats'],
+            ['budgets', 'Budgets'],
             ['suppliers', 'Fournisseurs'],
           ] as const
         ).map(([id, label]) => (
@@ -218,6 +260,8 @@ export function ProcurementPage() {
               <span>{data.expenses.length}</span>
             ) : id === 'purchases' ? (
               <span>{data.purchaseOrders.length}</span>
+            ) : id === 'budgets' ? (
+              <span>{data.budgets.length}</span>
             ) : null}
           </button>
         ))}
@@ -315,7 +359,7 @@ export function ProcurementPage() {
           </div>
         </>
       ) : null}
-      {tab !== 'overview' ? (
+      {tab !== 'overview' && tab !== 'budgets' ? (
         <div className="procurement-toolbar">
           <label>
             <span>Rechercher</span>
@@ -330,7 +374,7 @@ export function ProcurementPage() {
               className="button-primary"
               onClick={() => {
                 setLines([{ description: '', quantity: 1, unitPrice: 0 }]);
-                setModal('purchase');
+                openWithUnit('purchase');
               }}
             >
               + Bon d’achat
@@ -406,7 +450,9 @@ export function ProcurementPage() {
             <article className="purchase-card" key={order.id}>
               <header>
                 <div>
-                  <span>{order.reference}</span>
+                  <span>
+                    {order.reference} · {order.organizationalUnitName ?? 'Cycle non renseigné'}
+                  </span>
                   <h2>{order.supplierName}</h2>
                 </div>
                 <Status value={order.status} />
@@ -462,6 +508,47 @@ export function ProcurementPage() {
               </footer>
             </article>
           ))}
+        </div>
+      ) : null}
+      {tab === 'budgets' ? (
+        <div className="budget-section">
+          <div className="procurement-toolbar">
+            <p>
+              Budget annuel de chaque cycle, comparé aux dépenses approuvées de l’année de facture.
+            </p>
+            {can('budgets.manage') && data.writable.units.length ? (
+              <button
+                className="button-primary"
+                onClick={() => {
+                  setSelectedBudget(null);
+                  openWithUnit('budget');
+                }}
+              >
+                + Définir un budget
+              </button>
+            ) : null}
+          </div>
+          {data.budgets.length ? (
+            <div className="budget-grid">
+              {data.budgets.map((budget) => (
+                <BudgetCard
+                  key={budget.id}
+                  budget={budget}
+                  onEdit={
+                    can('budgets.manage') &&
+                    data.writable.units.some((unit) => unit.id === budget.organizationalUnitId)
+                      ? () => {
+                          setSelectedBudget(budget);
+                          openWithUnit('budget', budget.organizationalUnitId);
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">Aucun budget défini pour vos cycles.</p>
+          )}
         </div>
       ) : null}
       {tab === 'suppliers' ? (
@@ -533,7 +620,9 @@ export function ProcurementPage() {
                       ? 'Commande'
                       : modal === 'expense'
                         ? 'Engagement'
-                        : 'Référentiel'}
+                        : modal === 'budget'
+                          ? 'Prévision'
+                          : 'Référentiel'}
                 </span>
                 <h2>
                   {modal === 'supplier'
@@ -546,7 +635,11 @@ export function ProcurementPage() {
                         ? 'Créer un bon d’achat'
                         : modal === 'expense'
                           ? 'Saisir une dépense'
-                          : `Payer ${selectedExpense?.reference ?? ''}`}
+                          : modal === 'budget'
+                            ? selectedBudget
+                              ? 'Modifier le budget'
+                              : 'Définir un budget'
+                            : `Payer ${selectedExpense?.reference ?? ''}`}
                 </h2>
               </div>
               <button
@@ -613,6 +706,7 @@ export function ProcurementPage() {
                 </>
               ) : modal === 'purchase' ? (
                 <>
+                  <UnitField writable={data.writable} value={formUnitId} onChange={setFormUnitId} />
                   <Field label="Fournisseur">
                     <select name="supplierId" required>
                       {data.suppliers
@@ -700,6 +794,7 @@ export function ProcurementPage() {
                 </>
               ) : modal === 'expense' ? (
                 <>
+                  <UnitField writable={data.writable} value={formUnitId} onChange={setFormUnitId} />
                   <Field label="Fournisseur">
                     <select name="supplierId" required>
                       {data.suppliers
@@ -726,10 +821,12 @@ export function ProcurementPage() {
                     <select name="purchaseOrderId">
                       <option value="">Sans bon d’achat</option>
                       {data.purchaseOrders
-                        .filter((x) =>
-                          ['APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(
-                            x.status,
-                          ),
+                        .filter(
+                          (x) =>
+                            x.organizationalUnitId === formUnitId &&
+                            ['APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(
+                              x.status,
+                            ),
                         )
                         .map((x) => (
                           <option key={x.id} value={x.id}>
@@ -765,6 +862,55 @@ export function ProcurementPage() {
                   <Field label="Description" wide>
                     <textarea name="description" required />
                   </Field>
+                </>
+              ) : modal === 'budget' ? (
+                <>
+                  <UnitField
+                    writable={data.writable}
+                    value={formUnitId}
+                    onChange={setFormUnitId}
+                    disabled={Boolean(selectedBudget)}
+                  />
+                  <Field label="Année">
+                    <input
+                      name="fiscalYear"
+                      type="number"
+                      min="2000"
+                      max="2100"
+                      defaultValue={selectedBudget?.fiscalYear ?? new Date().getFullYear()}
+                      readOnly={Boolean(selectedBudget)}
+                      required
+                    />
+                  </Field>
+                  <Field label="Intitulé" wide>
+                    <input
+                      name="name"
+                      defaultValue={selectedBudget?.name ?? ''}
+                      placeholder="Budget de fonctionnement"
+                      required
+                    />
+                  </Field>
+                  <div className="budget-lines-editor wide">
+                    <strong>Montants prévus par catégorie (FCFA)</strong>
+                    {data.categories
+                      .filter((category) => category.status === 'ACTIVE')
+                      .map((category) => (
+                        <label key={category.id}>
+                          <span>{category.name}</span>
+                          <input
+                            name={`planned-${category.id}`}
+                            type="number"
+                            min="0"
+                            step="1000"
+                            defaultValue={
+                              selectedBudget?.lines.find((line) => line.categoryId === category.id)
+                                ?.plannedAmount ?? ''
+                            }
+                          />
+                        </label>
+                      ))}
+                    <small>Laissez vide une catégorie sans enveloppe.</small>
+                  </div>
                 </>
               ) : (
                 <>
@@ -821,7 +967,13 @@ export function ProcurementPage() {
               >
                 Annuler
               </button>
-              <button className="button-primary" disabled={mutation.isPending}>
+              <button
+                className="button-primary"
+                disabled={
+                  mutation.isPending ||
+                  (['purchase', 'expense', 'budget'].includes(modal) && !formUnitId)
+                }
+              >
                 {mutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
               </button>
             </footer>
@@ -846,6 +998,103 @@ function Field({
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+/** Cycle d'imputation : seuls les cycles autorisés par le serveur sont proposés. */
+function UnitField({
+  writable,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  writable: WritableUnitsDto;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  if (!writable.units.length)
+    return (
+      <p className="unit-warning wide" role="alert">
+        Aucun cycle ne vous est attribué : demandez à l’administrateur de compléter votre périmètre.
+      </p>
+    );
+  return (
+    <Field label="Cycle">
+      <select
+        name="organizationalUnitId"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        required
+      >
+        {writable.units.map((unit) => (
+          <option key={unit.id} value={unit.id}>
+            {unit.name}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+function BudgetCard({ budget, onEdit }: { budget: BudgetDto; onEdit?: (() => void) | undefined }) {
+  const ratio = budget.plannedTotal ? budget.committedTotal / budget.plannedTotal : 0;
+  const over = budget.committedTotal > budget.plannedTotal;
+  return (
+    <article className={`budget-card${over ? ' over' : ''}`}>
+      <header>
+        <div>
+          <span>
+            {budget.organizationalUnitName} · {budget.fiscalYear}
+          </span>
+          <h2>{budget.name}</h2>
+        </div>
+        {onEdit ? <button onClick={onEdit}>Modifier</button> : null}
+      </header>
+      <div className="budget-totals">
+        <div>
+          <span>Prévu</span>
+          <strong>{money(budget.plannedTotal)}</strong>
+        </div>
+        <div>
+          <span>Engagé</span>
+          <strong>{money(budget.committedTotal)}</strong>
+        </div>
+        <div>
+          <span>Payé</span>
+          <strong>{money(budget.paidTotal)}</strong>
+        </div>
+      </div>
+      <div
+        className="budget-meter"
+        role="meter"
+        aria-label="Consommation du budget"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(ratio * 100)}
+      >
+        <i style={{ width: `${Math.min(ratio, 1) * 100}%` }} />
+      </div>
+      <p className="budget-ratio">
+        {over
+          ? `Dépassement de ${money(budget.committedTotal - budget.plannedTotal)}`
+          : `${Math.round(ratio * 100)} % engagé · reste ${money(budget.plannedTotal - budget.committedTotal)}`}
+      </p>
+      <ul>
+        {budget.lines.map((line) => (
+          <li key={line.categoryId} className={line.remainingAmount < 0 ? 'over' : ''}>
+            <span>{line.categoryName}</span>
+            <span>
+              {money(line.committedAmount)} / {money(line.plannedAmount)}
+            </span>
+            <b>
+              {line.remainingAmount < 0
+                ? `− ${money(-line.remainingAmount)}`
+                : money(line.remainingAmount)}
+            </b>
+          </li>
+        ))}
+      </ul>
+    </article>
   );
 }
 function Status({ value }: { value: string }) {
@@ -877,7 +1126,9 @@ function ExpenseRow({
     <article className="expense-row">
       <div>
         <strong>{expense.reference}</strong>
-        <span>{expense.supplierName}</span>
+        <span>
+          {expense.supplierName} · {expense.organizationalUnitName ?? 'Cycle non renseigné'}
+        </span>
         <small>
           {expense.invoiceNumber ? `Facture ${expense.invoiceNumber}` : expense.description}
         </small>

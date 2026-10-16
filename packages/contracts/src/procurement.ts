@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema } from './primitives.js';
+import { idSchema, writableUnitsSchema } from './primitives.js';
 import { moneySchema } from './finance.js';
 
 export const supplierStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
@@ -42,6 +42,8 @@ export const purchaseOrderStatusSchema = z.enum([
 export const purchaseOrderSchema = z.object({
   id: idSchema,
   reference: z.string(),
+  organizationalUnitId: idSchema.nullable(),
+  organizationalUnitName: z.string().nullable(),
   supplierId: idSchema,
   supplierName: z.string(),
   status: purchaseOrderStatusSchema,
@@ -88,6 +90,8 @@ export const expenseDocumentUrlSchema = z.object({
 export const expenseSchema = z.object({
   id: idSchema,
   reference: z.string(),
+  organizationalUnitId: idSchema.nullable(),
+  organizationalUnitName: z.string().nullable(),
   supplierId: idSchema,
   supplierName: z.string(),
   categoryId: idSchema,
@@ -110,6 +114,27 @@ export const expenseSchema = z.object({
   createdAt: z.string().datetime(),
   payments: supplierPaymentSchema.array(),
 });
+export const budgetLineSchema = z.object({
+  categoryId: idSchema,
+  categoryName: z.string(),
+  plannedAmount: moneySchema.nonnegative(),
+  /** Dépenses approuvées, partiellement payées ou payées de la catégorie. */
+  committedAmount: moneySchema.nonnegative(),
+  paidAmount: moneySchema.nonnegative(),
+  /** Négatif lorsque le budget est dépassé. */
+  remainingAmount: z.number().int(),
+});
+export const budgetSchema = z.object({
+  id: idSchema,
+  organizationalUnitId: idSchema,
+  organizationalUnitName: z.string(),
+  fiscalYear: z.number().int(),
+  name: z.string(),
+  plannedTotal: moneySchema.nonnegative(),
+  committedTotal: moneySchema.nonnegative(),
+  paidTotal: moneySchema.nonnegative(),
+  lines: budgetLineSchema.array(),
+});
 export const procurementOverviewSchema = z.object({
   summary: z.object({
     supplierCount: z.number().int(),
@@ -122,6 +147,8 @@ export const procurementOverviewSchema = z.object({
   categories: expenseCategorySchema.array(),
   purchaseOrders: purchaseOrderSchema.array(),
   expenses: expenseSchema.array(),
+  budgets: budgetSchema.array(),
+  writable: writableUnitsSchema,
 });
 
 export const createSupplierBodySchema = z
@@ -158,6 +185,7 @@ export const createExpenseCategoryBodySchema = z
   .strict();
 export const createPurchaseOrderBodySchema = z
   .object({
+    organizationalUnitId: idSchema,
     supplierId: idSchema,
     expectedDate: z.string().date().nullable().optional(),
     notes: z.string().trim().max(2000).nullable().optional(),
@@ -185,6 +213,7 @@ export const workflowDecisionBodySchema = z
   });
 export const createExpenseBodySchema = z
   .object({
+    organizationalUnitId: idSchema,
     supplierId: idSchema,
     categoryId: idSchema,
     purchaseOrderId: idSchema.nullable().optional(),
@@ -210,6 +239,20 @@ export const payExpenseBodySchema = z
     note: z.string().trim().max(500).nullable().optional(),
   })
   .strict();
+export const upsertBudgetBodySchema = z
+  .object({
+    organizationalUnitId: idSchema,
+    fiscalYear: z.number().int().min(2000).max(2100),
+    name: z.string().trim().min(3).max(160),
+    lines: z
+      .array(z.object({ categoryId: idSchema, plannedAmount: moneySchema.nonnegative() }))
+      .min(1)
+      .max(200)
+      .refine((lines) => new Set(lines.map((line) => line.categoryId)).size === lines.length, {
+        message: 'Chaque catégorie ne peut apparaître qu’une fois.',
+      }),
+  })
+  .strict();
 export type ProcurementOverviewDto = z.infer<typeof procurementOverviewSchema>;
 export type SupplierDto = z.infer<typeof supplierSchema>;
 export type ExpenseDto = z.infer<typeof expenseSchema>;
@@ -220,3 +263,5 @@ export type CreatePurchaseOrderBody = z.infer<typeof createPurchaseOrderBodySche
 export type CreateExpenseBody = z.infer<typeof createExpenseBodySchema>;
 export type PayExpenseBody = z.infer<typeof payExpenseBodySchema>;
 export type WorkflowDecisionBody = z.infer<typeof workflowDecisionBodySchema>;
+export type BudgetDto = z.infer<typeof budgetSchema>;
+export type UpsertBudgetBody = z.infer<typeof upsertBudgetBodySchema>;

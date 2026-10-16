@@ -62,6 +62,19 @@ const demoAdmin: CurrentUser = {
 };
 
 const uuid = (value: number) => `01990000-0000-7000-8000-${String(value).padStart(12, '0')}`;
+// Cycles du référentiel de démonstration (voir l'arbre organisationnel plus bas).
+const demoWritable = {
+  units: [
+    { id: uuid(87), code: 'CRECHE', name: 'Crèche' },
+    { id: uuid(88), code: 'MATERNELLE', name: 'Maternelle' },
+    { id: uuid(89), code: 'PRIMAIRE', name: 'Primaire' },
+    { id: uuid(90), code: 'SECONDAIRE', name: 'Secondaire' },
+  ],
+  schoolWide: true,
+};
+const demoUnitName = (id: string | null | undefined) =>
+  demoWritable.units.find((unit) => unit.id === id)?.name ?? null;
+const demoPrimaryUnit = { organizationalUnitId: uuid(89), organizationalUnitName: 'Primaire' };
 const levelDefinitions = [
   ['6e', '6E', 'SECONDAIRE'],
   ['5e', '5E', 'SECONDAIRE'],
@@ -153,12 +166,15 @@ let demoStaffLeaves: StaffLeaveDto[] = [
   },
 ];
 let demoCommunications: CommunicationsOverviewDto = {
+  writable: demoWritable,
   announcements: [
     {
       id: uuid(780),
       title: 'Réunion de rentrée',
       body: 'La réunion avec les responsables aura lieu samedi à 9 h dans la grande salle.',
       audience: 'FAMILIES',
+      organizationalUnitId: null,
+      organizationalUnitName: null,
       publishedAt: '2026-10-01T08:00:00.000Z',
       expiresAt: '2026-10-20T18:00:00.000Z',
     },
@@ -231,6 +247,8 @@ const demoPortal: PortalOverviewDto = {
       title: 'Conseil pédagogique',
       body: 'Réunion mercredi à 14 h dans la salle des professeurs.',
       audience: 'STAFF',
+      organizationalUnitId: null,
+      organizationalUnitName: null,
       publishedAt: '2026-10-01T08:00:00.000Z',
       expiresAt: null,
     },
@@ -809,6 +827,36 @@ const demoSuppliesCategory = demoCategoryIds[0] ?? uuid(11_010),
   demoTechCategory = demoCategoryIds[1] ?? uuid(11_011),
   demoMaintenanceCategory = demoCategoryIds[2] ?? uuid(11_012);
 let demoProcurement: ProcurementOverviewDto = {
+  writable: demoWritable,
+  budgets: [
+    {
+      id: uuid(11_900),
+      ...demoPrimaryUnit,
+      fiscalYear: 2026,
+      name: 'Budget de fonctionnement du primaire',
+      plannedTotal: 2_500_000,
+      committedTotal: 1_125_000,
+      paidTotal: 360_000,
+      lines: [
+        {
+          categoryId: demoSuppliesCategory,
+          categoryName: 'Fournitures scolaires',
+          plannedAmount: 1_500_000,
+          committedAmount: 650_000,
+          paidAmount: 0,
+          remainingAmount: 850_000,
+        },
+        {
+          categoryId: demoMaintenanceCategory,
+          categoryName: 'Entretien',
+          plannedAmount: 1_000_000,
+          committedAmount: 475_000,
+          paidAmount: 360_000,
+          remainingAmount: 525_000,
+        },
+      ],
+    },
+  ],
   summary: {
     supplierCount: 3,
     pendingApprovalCount: 2,
@@ -881,6 +929,7 @@ let demoProcurement: ProcurementOverviewDto = {
     {
       id: uuid(11_020),
       reference: 'BC-2026-00012',
+      ...demoPrimaryUnit,
       supplierId: demoPaperSupplier,
       supplierName: 'Papeterie du Cameroun',
       status: 'SUBMITTED',
@@ -914,6 +963,7 @@ let demoProcurement: ProcurementOverviewDto = {
     {
       id: uuid(11_023),
       reference: 'BC-2026-00011',
+      ...demoPrimaryUnit,
       supplierId: demoTechSupplier,
       supplierName: 'Tech Éducation SARL',
       status: 'RECEIVED',
@@ -942,6 +992,7 @@ let demoProcurement: ProcurementOverviewDto = {
     {
       id: uuid(11_030),
       reference: 'DEP-2026-00018',
+      ...demoPrimaryUnit,
       supplierId: demoPaperSupplier,
       supplierName: 'Papeterie du Cameroun',
       categoryId: demoSuppliesCategory,
@@ -967,6 +1018,7 @@ let demoProcurement: ProcurementOverviewDto = {
     {
       id: uuid(11_031),
       reference: 'DEP-2026-00017',
+      ...demoPrimaryUnit,
       supplierId: demoTechSupplier,
       supplierName: 'Tech Éducation SARL',
       categoryId: demoTechCategory,
@@ -1002,6 +1054,7 @@ let demoProcurement: ProcurementOverviewDto = {
     {
       id: uuid(11_032),
       reference: 'DEP-2026-00019',
+      ...demoPrimaryUnit,
       supplierId: demoCleanSupplier,
       supplierName: 'Clean Plus Services',
       categoryId: demoMaintenanceCategory,
@@ -1081,6 +1134,45 @@ export function demoApiResponse(path: string, method: string, body?: unknown): u
   }
   if (method === 'GET' && path === '/cash-sessions/current') return demoCashSession;
   if (method === 'GET' && path === '/procurement/overview') return demoProcurement;
+  if (method === 'PUT' && path === '/budgets') {
+    const input = body as {
+      organizationalUnitId: string;
+      fiscalYear: number;
+      name: string;
+      lines: Array<{ categoryId: string; plannedAmount: number }>;
+    };
+    const lines = input.lines.map((line) => ({
+      categoryId: line.categoryId,
+      categoryName:
+        demoProcurement.categories.find((category) => category.id === line.categoryId)?.name ??
+        'Catégorie',
+      plannedAmount: line.plannedAmount,
+      committedAmount: 0,
+      paidAmount: 0,
+      remainingAmount: line.plannedAmount,
+    }));
+    const existing = demoProcurement.budgets.find(
+      (budget) =>
+        budget.organizationalUnitId === input.organizationalUnitId &&
+        budget.fiscalYear === input.fiscalYear,
+    );
+    const row = {
+      id: existing?.id ?? uuid(11_910 + demoProcurement.budgets.length),
+      organizationalUnitId: input.organizationalUnitId,
+      organizationalUnitName: demoUnitName(input.organizationalUnitId) ?? 'Cycle',
+      fiscalYear: input.fiscalYear,
+      name: input.name,
+      plannedTotal: lines.reduce((sum, line) => sum + line.plannedAmount, 0),
+      committedTotal: 0,
+      paidTotal: 0,
+      lines,
+    };
+    demoProcurement = {
+      ...demoProcurement,
+      budgets: [row, ...demoProcurement.budgets.filter((budget) => budget.id !== row.id)],
+    };
+    return row;
+  }
   if (method === 'POST' && path === '/expense-documents')
     return {
       id: uuid(11_900),
@@ -1140,6 +1232,7 @@ export function demoApiResponse(path: string, method: string, body?: unknown): u
   }
   if (method === 'POST' && path === '/purchase-orders') {
     const input = body as {
+      organizationalUnitId: string;
       supplierId: string;
       expectedDate?: string | null;
       notes?: string | null;
@@ -1151,6 +1244,8 @@ export function demoApiResponse(path: string, method: string, body?: unknown): u
     const row: ProcurementOverviewDto['purchaseOrders'][number] = {
       id: uuid(11_300 + demoProcurement.purchaseOrders.length),
       reference: `BC-2026-${String(13 + demoProcurement.purchaseOrders.length).padStart(5, '0')}`,
+      organizationalUnitId: input.organizationalUnitId,
+      organizationalUnitName: demoUnitName(input.organizationalUnitId),
       supplierId: supplier.id,
       supplierName: supplier.name,
       status: 'DRAFT',
@@ -1217,6 +1312,7 @@ export function demoApiResponse(path: string, method: string, body?: unknown): u
       description: string;
       amount: number;
       attachmentFileId?: string | null;
+      organizationalUnitId: string;
     };
     const supplier = demoProcurement.suppliers.find((x) => x.id === input.supplierId),
       category = demoProcurement.categories.find((x) => x.id === input.categoryId),
@@ -1225,6 +1321,8 @@ export function demoApiResponse(path: string, method: string, body?: unknown): u
     const row: ProcurementOverviewDto['expenses'][number] = {
       id: uuid(11_500 + demoProcurement.expenses.length),
       reference: `DEP-2026-${String(20 + demoProcurement.expenses.length).padStart(5, '0')}`,
+      organizationalUnitId: input.organizationalUnitId,
+      organizationalUnitName: demoUnitName(input.organizationalUnitId),
       supplierId: supplier.id,
       supplierName: supplier.name,
       categoryId: category.id,
@@ -1955,12 +2053,15 @@ export function demoApiResponse(path: string, method: string, body?: unknown): u
       body: string;
       audience: 'ALL' | 'STAFF' | 'FAMILIES' | 'STUDENTS';
       expiresAt?: string | null;
+      organizationalUnitId?: string | null;
     };
     const row = {
       id: uuid(10_700 + demoCommunications.announcements.length),
       publishedAt: new Date().toISOString(),
-      expiresAt: input.expiresAt ?? null,
       ...input,
+      expiresAt: input.expiresAt ?? null,
+      organizationalUnitId: input.organizationalUnitId ?? null,
+      organizationalUnitName: demoUnitName(input.organizationalUnitId),
     };
     demoCommunications = {
       ...demoCommunications,

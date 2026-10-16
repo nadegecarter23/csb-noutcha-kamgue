@@ -490,9 +490,13 @@ model Announcement {
   publishedAt     DateTime              @default(now()) @map("published_at") @db.Timestamptz(3)
   expiresAt       DateTime?             @map("expires_at") @db.Timestamptz(3)
   createdByUserId String                @map("created_by_user_id") @db.Uuid
+  /// Cycle visé ; vide = annonce pour tout le complexe.
+  organizationalUnitId String?          @map("organizational_unit_id") @db.Uuid
   createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   school          School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  organizationalUnit OrganizationalUnit? @relation(fields: [organizationalUnitId], references: [id], onDelete: Restrict)
   @@index([schoolId, publishedAt])
+  @@index([schoolId, organizationalUnitId, publishedAt(sort: Desc)], map: "announcements_school_unit_published_idx")
   @@map("announcements")
 }
 
@@ -1130,6 +1134,7 @@ model OrganizationalUnit {
   supplierPayments SupplierPayment[]
   suppliers Supplier[]
   budgets Budget[]
+  announcements Announcement[]
 
   @@unique([schoolId, code])
   @@index([schoolId, status, orderIndex])

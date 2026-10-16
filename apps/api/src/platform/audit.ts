@@ -239,6 +239,7 @@ export const AuditAction = {
   EXPENSE_SUBMITTED: 'expense.submit',
   EXPENSE_DECIDED: 'expense.decide',
   SUPPLIER_PAYMENT_CREATED: 'supplier_payment.create',
+  BUDGET_SAVED: 'budget.save',
   STUDENT_CATEGORY_CREATED: 'student_category.create',
   STUDENT_CATEGORY_UPDATED: 'student_category.update',
   STUDENT_CREATED: 'student.create',

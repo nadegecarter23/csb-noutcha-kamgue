@@ -41,7 +41,11 @@ export function createPortalService(db: Database) {
         const assignments = staff
           ? await tx.teachingAssignment.findMany({
               where: { schoolId, academicYearId, teacherUserId: userId, status: 'ACTIVE' },
-              select: { id: true, classId: true },
+              select: {
+                id: true,
+                classId: true,
+                class: { select: { organizationalUnitId: true } },
+              },
             })
           : [];
         if (assignments.length) mode = 'TEACHER';
@@ -60,7 +64,7 @@ export function createPortalService(db: Database) {
               where: { schoolId, academicYearId, studentId: { in: studentIds }, status: 'ACTIVE' },
               include: {
                 student: { select: { firstName: true, lastName: true } },
-                class: { select: { name: true } },
+                class: { select: { name: true, organizationalUnitId: true } },
                 attendanceRecords: { select: { mark: true } },
                 reportCards: {
                   where: { status: 'PUBLISHED' },
@@ -102,13 +106,33 @@ export function createPortalService(db: Database) {
             : mode === 'STUDENT'
               ? (['ALL', 'STUDENTS'] as const)
               : (['ALL', 'STAFF'] as const);
+        // Annonces du complexe et des cycles fréquentés. La RLS applique la même
+        // règle ; ce filtre la double pour les familles, élèves et enseignants.
+        const memberUnitIds = [
+          ...new Set(
+            (mode === 'TEACHER'
+              ? assignments.map((x) => x.class.organizationalUnitId)
+              : enrollments.map((x) => x.class?.organizationalUnitId)
+            ).filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        const unitFilter =
+          mode === 'STAFF'
+            ? {}
+            : {
+                OR: [
+                  { organizationalUnitId: null },
+                  { organizationalUnitId: { in: memberUnitIds } },
+                ],
+              };
         const [announcements, homework, timetable] = await Promise.all([
           tx.announcement.findMany({
             where: {
               schoolId,
               audience: { in: [...audience] },
-              OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
+              AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }] }, unitFilter],
             },
+            include: { organizationalUnit: { select: { name: true } } },
             orderBy: { publishedAt: 'desc' },
             take: 8,
           }),
@@ -209,6 +233,8 @@ export function createPortalService(db: Database) {
             title: x.title,
             body: x.body,
             audience: x.audience,
+            organizationalUnitId: x.organizationalUnitId,
+            organizationalUnitName: x.organizationalUnit?.name ?? null,
             publishedAt: iso(x.publishedAt),
             expiresAt: x.expiresAt ? iso(x.expiresAt) : null,
           })),

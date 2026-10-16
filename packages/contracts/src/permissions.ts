@@ -300,6 +300,12 @@ export const PERMISSIONS = [
     group: 'procurement',
     phase: 28,
   },
+  {
+    code: 'budgets.manage',
+    description: 'Définir les budgets annuels des cycles',
+    group: 'procurement',
+    phase: 28,
+  },
 
   /* --- Élèves & inscriptions (Phase 03) --------------------------------- */
   { code: 'students.read', description: 'Consulter les élèves', group: 'students', phase: 3 },

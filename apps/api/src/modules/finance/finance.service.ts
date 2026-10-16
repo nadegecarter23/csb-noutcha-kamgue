@@ -654,6 +654,12 @@ export function createFinanceService(db: Database, audit: AuditService) {
       return withSchoolScope(db, schoolId, async (tx) => {
         const row = await tx.discount.findFirst({ where: { id, assignment: { schoolId } } });
         if (!row) throw errors.notFound('Remise introuvable.');
+        if (row.status !== 'PENDING_APPROVAL')
+          throw errors.conflict('Cette remise n’attend pas de décision.');
+        // Double contrôle : celui qui accorde une remise au-dessus du seuil ne
+        // peut pas l’approuver lui-même, comme pour les achats et les dépenses.
+        if (row.createdBy === actorId)
+          throw errors.forbidden('L’auteur d’une remise ne peut pas l’approuver lui-même.');
         await tx.discount.update({
           where: { id },
           data: approve

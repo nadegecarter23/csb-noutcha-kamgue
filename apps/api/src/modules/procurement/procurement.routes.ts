@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
+  budgetSchema,
   createExpenseBodySchema,
   createExpenseCategoryBodySchema,
   createPurchaseOrderBodySchema,
@@ -16,6 +17,7 @@ import {
   supplierPaymentSchema,
   supplierSchema,
   updateSupplierBodySchema,
+  upsertBudgetBodySchema,
   workflowDecisionBodySchema,
 } from '@cplan/contracts';
 import { requireAuth, requireSchool } from '../../platform/plugins/auth.plugin.js';
@@ -85,6 +87,20 @@ export function procurementRoutes(service: ProcurementService): FastifyPluginAsy
       },
       async (request, reply) =>
         reply.code(201).send(await service.createCategory(requireSchool(request), request.body)),
+    );
+
+    app.put(
+      '/budgets',
+      {
+        preHandler: [...auth, app.requirePermission('budgets.manage')],
+        schema: {
+          tags: ['Achats et dépenses'],
+          security,
+          body: upsertBudgetBodySchema,
+          response: { 200: budgetSchema },
+        },
+      },
+      (request) => service.upsertBudget(requireSchool(request), request.body),
     );
 
     app.post(

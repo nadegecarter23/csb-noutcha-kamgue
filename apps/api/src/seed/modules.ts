@@ -479,6 +479,10 @@ async function seedSchoolServices(prisma: PrismaClient, context: ExtendedSeedCon
 async function seedProcurement(prisma: PrismaClient, context: ExtendedSeedContext) {
   const adminId = requiredUser(context.users, '+237699000001', 'administrateur');
   const accountantId = requiredUser(context.users, '+237699000003', 'comptable');
+  // Chaque achat et chaque dépense appartiennent à un cycle (CSB-06.4).
+  const unit = await prisma.organizationalUnit.findFirstOrThrow({
+    where: { schoolId: context.schoolId, code: 'PRIMAIRE' },
+  });
   const supplier = await prisma.supplier.upsert({
     where: { schoolId_code: { schoolId: context.schoolId, code: 'FOURN-001' } },
     update: { name: 'Papeterie du Littoral', phone: '+237233445566', status: 'ACTIVE' },
@@ -505,6 +509,7 @@ async function seedProcurement(prisma: PrismaClient, context: ExtendedSeedContex
   const order = await prisma.purchaseOrder.upsert({
     where: { reference: 'BC-DEMO-2026-0001' },
     update: {
+      organizationalUnitId: unit.id,
       supplierId: supplier.id,
       status: 'APPROVED',
       subtotal: 125_000n,
@@ -516,6 +521,7 @@ async function seedProcurement(prisma: PrismaClient, context: ExtendedSeedContex
     create: {
       schoolId: context.schoolId,
       reference: 'BC-DEMO-2026-0001',
+      organizationalUnitId: unit.id,
       supplierId: supplier.id,
       status: 'APPROVED',
       subtotal: 125_000n,
@@ -545,6 +551,7 @@ async function seedProcurement(prisma: PrismaClient, context: ExtendedSeedContex
   const expense = await prisma.expense.upsert({
     where: { reference: 'DEP-DEMO-2026-0001' },
     update: {
+      organizationalUnitId: unit.id,
       supplierId: supplier.id,
       categoryId: category.id,
       purchaseOrderId: order.id,
@@ -555,6 +562,7 @@ async function seedProcurement(prisma: PrismaClient, context: ExtendedSeedContex
     create: {
       schoolId: context.schoolId,
       reference: 'DEP-DEMO-2026-0001',
+      organizationalUnitId: unit.id,
       supplierId: supplier.id,
       categoryId: category.id,
       purchaseOrderId: order.id,
@@ -578,6 +586,7 @@ async function seedProcurement(prisma: PrismaClient, context: ExtendedSeedContex
       schoolId: context.schoolId,
       expenseId: expense.id,
       reference: 'RF-DEMO-2026-0001',
+      organizationalUnitId: unit.id,
       amount: 75_000n,
       method: 'BANK_TRANSFER',
       externalReference: 'VIR-DEMO-001',
