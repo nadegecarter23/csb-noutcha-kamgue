@@ -1,0 +1,20 @@
+// Palette commune : charte officielle Bleu nuit, Bleu royal & Orange.
+export const colors = {
+  forest: '#0b1b3d',
+  forestDeep: '#07142f',
+  brand: '#1f3d80',
+  brandSoft: '#eef3fb',
+  accent: '#f08524',
+  accentSoft: '#fff3e8',
+  ink: '#2c3e50',
+  muted: '#667085',
+  line: '#d9e0ea',
+  background: '#f8f9fa',
+  surface: '#FFFFFF',
+  success: '#087A43',
+  successSoft: '#ECFDF3',
+  warning: '#A86600',
+  warningSoft: '#FFF7E0',
+  danger: '#C33131',
+  dangerSoft: '#FEF2F2',
+};

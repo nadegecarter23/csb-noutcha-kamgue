@@ -1,0 +1,54 @@
+{
+  "name": "cplan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CSB Noutcha KAMGUE — plateforme de gestion scolaire et financière",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:mobile": "pnpm --dir apps/mobile dev",
+    "prebuild": "pnpm --filter @cplan/api db:generate && turbo run typecheck lint && pnpm --filter @cplan/contracts test",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "turbo run lint typecheck && turbo run test && pnpm deployment:check",
+    "deployment:check": "node --check infra/env/validate-environment.mjs && node --test infra/env/validate-environment.test.mjs",
+    "deployment:validate": "node infra/env/validate-environment.mjs",
+    "check:mobile": "pnpm --filter @cplan/mobile lint && pnpm --filter @cplan/mobile typecheck",
+    "e2e:web": "pnpm --filter @cplan/web e2e",
+    "load:check": "node --check tests/load/k6-school-opening.js",
+    "clean": "turbo run clean && rimraf node_modules",
+    "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "infra:reset": "docker compose -f infra/docker/docker-compose.yml down -v && pnpm infra:up",
+    "infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "db:migrate": "pnpm --filter @cplan/api db:migrate",
+    "db:generate": "pnpm --filter @cplan/api db:generate",
+    "db:reset": "pnpm --filter @cplan/api db:reset",
+    "db:seed": "pnpm --filter @cplan/api db:seed",
+    "db:studio": "pnpm --filter @cplan/api db:studio",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@cplan/config": "workspace:*",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "//": "pnpm 10 bloque les scripts post-install par défaut. Seules ces dépendances, qui compilent des binaires natifs indispensables, sont autorisées.",
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
+  }
+}

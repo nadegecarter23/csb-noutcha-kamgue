@@ -1,0 +1,48 @@
+{
+  "app": {
+    "name": "CSB Noutcha KAMGUE",
+    "tagline": "Gestion scolaire et financière"
+  },
+  "auth": {
+    "signIn": "Se connecter",
+    "identifier": "E-mail ou téléphone",
+    "identifierPlaceholder": "vous@etablissement.cm ou 699 12 34 56",
+    "password": "Mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "signingIn": "Connexion…",
+    "welcome": "Connexion à votre espace",
+    "notAvailableYet": "L'authentification sera disponible en Phase 01."
+  },
+  "nav": {
+    "registrar": "Scolarité",
+    "accounting": "Comptabilité",
+    "management": "Direction",
+    "administration": "Administration"
+  },
+  "common": {
+    "loading": "Chargement…",
+    "retry": "Réessayer",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "search": "Rechercher",
+    "export": "Exporter",
+    "print": "Imprimer",
+    "currency": "FCFA"
+  },
+  "errors": {
+    "title": "Une erreur est survenue",
+    "network": "Impossible de joindre le serveur. Vérifiez votre connexion.",
+    "unexpected": "Une erreur inattendue s'est produite.",
+    "requestId": "Référence technique",
+    "notFound": {
+      "title": "Page introuvable",
+      "message": "La page que vous cherchez n'existe pas ou a été déplacée.",
+      "backHome": "Retour à l'accueil"
+    }
+  },
+  "status": {
+    "healthy": "Opérationnel",
+    "degraded": "Dégradé",
+    "unreachable": "Injoignable"
+  }
+}

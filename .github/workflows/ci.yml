@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.33.2'
+
+jobs:
+  quality:
+    name: Qualité (lint · types · tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cplan
+          POSTGRES_PASSWORD: cplan_test_password
+          POSTGRES_DB: cplan
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cplan"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      - name: Générer le client Prisma
+        run: pnpm --filter @cplan/api db:generate
+
+      - name: Formatage
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Tests
+        run: pnpm test
+        env:
+          DATABASE_URL: postgresql://cplan:cplan_test_password@localhost:5432/cplan
+          REDIS_URL: redis://localhost:6379
+
+      - name: Build
+        run: pnpm build
+
+      - name: Budget du bundle web
+        run: pnpm --filter @cplan/web build:budget
+
+  e2e-web:
+    name: E2E web (bureau, tablette et mobile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+      - name: Installer Chromium
+        run: pnpm --filter @cplan/web exec playwright install --with-deps chromium
+      - name: Parcours critiques
+        run: pnpm e2e:web
+        env:
+          PLAYWRIGHT_OUTPUT_DIR: ${{ runner.temp }}/csbnk-playwright
+      - name: Conserver les traces en cas d’échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: ${{ runner.temp }}/csbnk-playwright
+          retention-days: 7
+
+  # Garde-fou de sécurité : aucun secret ne doit entrer dans le dépôt.
+  # Référence : docs/phases/PHASE-16-audit-securite.md §7
+  secrets:
+    name: Détection de secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  audit:
+    name: Vulnérabilités des dépendances
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      # Bloquant sur les vulnérabilités hautes et critiques uniquement :
+      # une CI rouge en permanence finit par être ignorée.
+      - name: pnpm audit
+        run: pnpm audit --audit-level high

@@ -1,0 +1,9 @@
+# Fins de ligne LF partout, conformément à Prettier et à .editorconfig.
+* text=auto eol=lf
+
+# Fichiers binaires
+*.png binary
+*.jpg binary
+*.ttf binary
+*.pdf binary
+*.ps1 text eol=crlf

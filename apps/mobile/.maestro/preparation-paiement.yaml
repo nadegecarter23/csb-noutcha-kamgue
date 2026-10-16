@@ -1,0 +1,30 @@
+appId: cm.cplan.app
+name: Préparation d'un paiement sans transaction
+---
+- launchApp:
+    clearState: true
+- tapOn: 'Se connecter'
+- tapOn:
+    id: 'login-phone'
+- inputText: ${PARENT_PHONE}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PARENT_PASSWORD}
+- hideKeyboard
+- tapOn: 'Se connecter'
+- tapOn: 'Continuer vers mon espace'
+- tapOn:
+    id: 'child-.*'
+- assertVisible: 'Détail de l’enfant'
+- scrollUntilVisible:
+    element:
+      text: 'Payer les frais'
+    direction: DOWN
+- tapOn: 'Payer les frais'
+- assertVisible: 'Paiement des frais'
+- assertVisible:
+    id: 'payment-amount'
+- tapOn:
+    id: 'payment-provider-ORANGE_MONEY'
+- assertVisible: 'Orange Money'
+- assertVisible: 'Le CSB Noutcha KAMGUE ne vous demandera jamais votre code secret.*'

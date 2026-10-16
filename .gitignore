@@ -1,0 +1,63 @@
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.turbo/
+.vercel/
+*.tsbuildinfo
+
+# Environnement — JAMAIS de secret dans le dépôt
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Tests
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+android/
+ios/
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Éditeurs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Divers
+tmp/
+temp/
+backups/
+*.pem
+
+# Supports marketing générés hors application
+output/

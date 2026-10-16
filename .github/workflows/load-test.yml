@@ -1,0 +1,46 @@
+name: Charge de rentrée CSB
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_target:
+        description: 'Saisir PREPROD pour autoriser le test de charge'
+        required: true
+        type: string
+      enable_payments:
+        description: 'Créer des paiements sur le jeu de charge dédié'
+        required: true
+        default: true
+        type: boolean
+      enable_cash_close:
+        description: 'Clôturer la caisse dédiée après la charge (action irréversible)'
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: csbnk-load-preprod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  k6:
+    if: ${{ inputs.confirm_target == 'PREPROD' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: preproduction
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: Exécuter le scénario rentrée et caisse
+        env:
+          API_URL: ${{ secrets.LOAD_API_URL }}
+          ACCESS_TOKEN: ${{ secrets.LOAD_ACCESS_TOKEN }}
+          ENROLLMENT_ID: ${{ secrets.LOAD_ENROLLMENT_ID }}
+          SCOPE_UNIT_IDS: ${{ secrets.LOAD_SCOPE_UNIT_IDS }}
+          PAYMENT_AMOUNT: ${{ vars.LOAD_PAYMENT_AMOUNT || '1000' }}
+          ENABLE_PAYMENTS: ${{ inputs.enable_payments }}
+          ENABLE_CASH_CLOSE: ${{ inputs.enable_cash_close }}
+        run: k6 run tests/load/k6-school-opening.js

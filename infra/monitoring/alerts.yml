@@ -1,0 +1,33 @@
+groups:
+  - name: cplan-critical
+    rules:
+      - alert: CplanApiDown
+        expr: up{job="cplan-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: 'Une instance API CSB Noutcha KAMGUE ne répond plus' }
+      - alert: CplanPaymentStuck
+        expr: cplan_payments_stuck_total > 0
+        for: 10m
+        labels: { severity: critical }
+        annotations: { summary: 'Paiement bloqué depuis plus de 30 minutes' }
+      - alert: CplanReconciliationAnomaly
+        expr: cplan_reconciliation_anomalies_total > 0
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: 'Anomalie de rapprochement Mobile Money' }
+      - alert: CplanNotificationBacklog
+        expr: cplan_notification_delivery_backlog_total > 100
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: 'File de notifications anormalement longue' }
+      - alert: CplanExportStuck
+        expr: cplan_exports_stuck_total > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'Export bloqué depuis plus de 30 minutes' }
+      - alert: CplanExternalValidationSla
+        expr: cplan_external_payments_overdue_total > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'Validation d’un paiement externe hors SLA' }

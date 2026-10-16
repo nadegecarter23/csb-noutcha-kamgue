@@ -1,0 +1,19 @@
+appId: cm.cplan.app
+name: Connexion parent et tableau familial
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Bienvenue au CSB Noutcha KAMGUE'
+- tapOn: 'Se connecter'
+- tapOn:
+    id: 'login-phone'
+- inputText: ${PARENT_PHONE}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PARENT_PASSWORD}
+- hideKeyboard
+- tapOn: 'Se connecter'
+- assertVisible: 'Enfants détectés'
+- tapOn: 'Continuer vers mon espace'
+- assertVisible: 'Solde familial à régler'
+- assertVisible: 'Mes enfants'

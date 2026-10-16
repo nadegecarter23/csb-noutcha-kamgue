@@ -1,0 +1,24 @@
+appId: cm.cplan.app
+name: Accès au parcours d'association d'un enfant
+---
+- launchApp:
+    clearState: true
+- tapOn: 'Se connecter'
+- tapOn:
+    id: 'login-phone'
+- inputText: ${PARENT_PHONE}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PARENT_PASSWORD}
+- hideKeyboard
+- tapOn: 'Se connecter'
+- tapOn: 'Continuer vers mon espace'
+- tapOn: 'Associer'
+- assertVisible: 'Associer un enfant'
+- assertVisible: 'Scanner le QR code'
+- tapOn:
+    id: 'association-code'
+- inputText: 'CODE-INVALIDE-E2E'
+- hideKeyboard
+- assertVisible: 'Associer avec ce code'
+- assertVisible: 'Demande manuelle'

@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "CSB Noutcha KAMGUE",
+    "slug": "cplan",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "cplan",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/brand/csb-nk-icon.png",
+    "backgroundColor": "#F8F9FA",
+    "web": {
+      "favicon": "./assets/brand/csb-nk-logo.png",
+      "name": "CSB Noutcha KAMGUE",
+      "themeColor": "#0B1B3D",
+      "backgroundColor": "#F8F9FA"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "cm.cplan.app"
+    },
+    "android": {
+      "package": "cm.cplan.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#F8F9FA",
+        "foregroundImage": "./assets/brand/csb-nk-logo.png"
+      }
+    },
+    "plugins": ["expo-router", "expo-font"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:3000/api/v1"
+    }
+  }
+}
