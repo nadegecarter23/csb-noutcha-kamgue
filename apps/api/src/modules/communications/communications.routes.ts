@@ -75,7 +75,7 @@ export function communicationsRoutes(service: CommunicationsService): FastifyPlu
         preHandler: [
           app.authenticate,
           app.requireSchoolContext,
-          app.requirePermission('communications.manage'),
+          app.requirePermission('homework.manage'),
         ],
         schema: {
           tags: ['Communication'],

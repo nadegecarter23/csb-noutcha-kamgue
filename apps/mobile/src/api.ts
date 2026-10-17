@@ -154,10 +154,8 @@ export async function cached<T>(
     throw error;
   }
 }
-export async function downloadReceipt(receiptId: string) {
-  const file = await api.get<{ filename: string; base64: string }>(
-    `/parent/receipts/${receiptId}/download`,
-  );
+async function downloadPdf(path: string, dialogTitle: string) {
+  const file = await api.get<{ filename: string; base64: string }>(path);
   const directory = FileSystem.cacheDirectory;
   if (!directory) throw new MobileApiError('Stockage local indisponible.');
   const uri = `${directory}${file.filename}`;
@@ -165,9 +163,16 @@ export async function downloadReceipt(receiptId: string) {
     encoding: FileSystem.EncodingType.Base64,
   });
   if (await Sharing.isAvailableAsync())
-    await Sharing.shareAsync(uri, {
-      mimeType: 'application/pdf',
-      dialogTitle: 'Reçu CSB Noutcha KAMGUE',
-    });
+    await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle });
   return uri;
+}
+export function downloadReceipt(receiptId: string) {
+  return downloadPdf(`/parent/receipts/${receiptId}/download`, 'Reçu CSB Noutcha KAMGUE');
+}
+/** Bulletin publié, nommé par élève et période pour être retrouvé facilement. */
+export function downloadReportCard(reportCardId: string) {
+  return downloadPdf(
+    `/parent/report-cards/${reportCardId}/download`,
+    'Bulletin CSB Noutcha KAMGUE',
+  );
 }

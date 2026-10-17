@@ -5,6 +5,7 @@ import { createFinanceService } from '../modules/finance/finance.service.js';
 import { createPaymentsService } from '../modules/finance/payments.service.js';
 import { createCashService } from '../modules/cash/cash.service.js';
 import { createParentService } from '../modules/parent/parent.service.js';
+import { createReportCardsService } from '../modules/report-cards/report-cards.service.js';
 import { closeTestDatabase, resetTestData, testDatabase } from './helpers/test-app.js';
 
 let db: PrismaClient;
@@ -165,7 +166,7 @@ describe('phases 8 à 10', () => {
     const audit = createAuditService(db);
     const payments = createPaymentsService(db, audit);
     const cash = createCashService(db, audit, payments);
-    const parent = createParentService(db, payments);
+    const parent = createParentService(db, payments, createReportCardsService(db, audit));
     await cash.open(schoolId, cashierId, { openingFloat: 0 });
     const payment = await cash.collect(schoolId, cashierId, 'cash-parent-810', {
       enrollmentId,

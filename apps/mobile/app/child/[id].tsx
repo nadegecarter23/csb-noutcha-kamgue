@@ -86,6 +86,27 @@ export default function ChildDetail() {
             <Text style={styles.matricule}>Matricule : {data?.studentNumber ?? '—'}</Text>
           </View>
         </View>
+        <Pressable
+          testID="child-results"
+          accessibilityRole="button"
+          accessibilityLabel="Voir les notes, les présences et les bulletins"
+          onPress={() =>
+            router.push({
+              pathname: '/results/[id]',
+              params: { id, name: data ? `${data.firstName} ${data.lastName}` : '' },
+            })
+          }
+          style={({ pressed }) => [styles.resultsLink, pressed && styles.pressed]}
+        >
+          <View style={styles.resultsIcon}>
+            <Ionicons name="school-outline" size={22} color={colors.brand} />
+          </View>
+          <View style={styles.enrollmentCopy}>
+            <Text style={styles.year}>Scolarité</Text>
+            <Text style={common.caption}>Notes, présences et bulletins à télécharger</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={19} color={colors.muted} />
+        </Pressable>
         {data?.balance ? (
           <View style={styles.summary}>
             <SummaryItem label="Total dû" value={data.balance.totalDue} />
@@ -235,6 +256,26 @@ function SummaryItem({
 
 const styles = StyleSheet.create({
   content: { gap: 16, paddingBottom: 30 },
+  resultsLink: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+  },
+  resultsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.brandSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: { opacity: 0.75 },
   identityCard: {
     minHeight: 132,
     flexDirection: 'row',

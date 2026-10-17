@@ -204,6 +204,46 @@ const DEMO_USERS: DemoUser[] = [
     jobTitle: 'Professeur de lettres',
   },
   {
+    firstName: 'Emmanuel',
+    lastName: 'Noutcha',
+    phone: '+237699000008',
+    email: 'promoteur@csb-noutcha-kamgue.local',
+    roleCode: 'PROMOTER',
+    jobTitle: 'Promoteur',
+  },
+  {
+    firstName: 'Brigitte',
+    lastName: 'Ndzana',
+    phone: '+237699000009',
+    email: 'econome@csb-noutcha-kamgue.local',
+    roleCode: 'BURSAR',
+    jobTitle: 'Économe principale',
+  },
+  {
+    firstName: 'Hervé',
+    lastName: 'Ateba',
+    phone: '+237699000010',
+    email: 'rh@csb-noutcha-kamgue.local',
+    roleCode: 'HR_MANAGER',
+    jobTitle: 'Gestionnaire des ressources humaines',
+  },
+  {
+    firstName: 'Carine',
+    lastName: 'Essomba',
+    phone: '+237699000011',
+    email: 'communication@csb-noutcha-kamgue.local',
+    roleCode: 'COMMUNICATION_OFFICER',
+    jobTitle: 'Chargée de communication',
+  },
+  {
+    firstName: 'Odile',
+    lastName: 'Manga',
+    phone: '+237699000012',
+    email: 'primaire@csb-noutcha-kamgue.local',
+    roleCode: 'CYCLE_HEAD',
+    jobTitle: 'Directrice du primaire',
+  },
+  {
     firstName: 'Jean',
     lastName: 'Fotso',
     phone: '+237699123456',
@@ -267,7 +307,7 @@ async function seedUsers(schoolId: string): Promise<Map<string, string>> {
       });
     }
 
-    log(`  ${demo.roleCode.padEnd(14)} ${demo.firstName} ${demo.lastName} · ${phone}`);
+    log(`  ${demo.roleCode.padEnd(22)} ${demo.firstName} ${demo.lastName} · ${phone}`);
   }
   return ids;
 }
@@ -277,7 +317,15 @@ async function seedUserScopes(schoolId: string, users: Map<string, string>): Pro
     where: { schoolId },
     orderBy: { orderIndex: 'asc' },
   });
-  const schoolWidePhones = ['+237699000001', '+237699000002', '+237699000003'];
+  const schoolWidePhones = [
+    '+237699000001',
+    '+237699000002',
+    '+237699000003',
+    '+237699000008',
+    '+237699000009',
+    '+237699000010',
+    '+237699000011',
+  ];
   for (const phone of schoolWidePhones) {
     const userId = users.get(phone);
     if (!userId) continue;
@@ -305,6 +353,20 @@ async function seedUserScopes(schoolId: string, users: Map<string, string>): Pro
     await prisma.userAccessScope.deleteMany({ where: { schoolId, userId } });
     await prisma.userAccessScope.create({
       data: { schoolId, userId, scopeType: 'OWN_ASSIGNMENTS' },
+    });
+  }
+  // Responsable de cycle : limité au primaire par son périmètre, pas par son rôle.
+  const cycleHeadId = users.get('+237699000012');
+  const primary = units.find((unit) => unit.code === 'PRIMAIRE');
+  if (cycleHeadId && primary) {
+    await prisma.userAccessScope.deleteMany({ where: { schoolId, userId: cycleHeadId } });
+    await prisma.userAccessScope.create({
+      data: {
+        schoolId,
+        userId: cycleHeadId,
+        scopeType: 'UNIT',
+        organizationalUnitId: primary.id,
+      },
     });
   }
   log(`Périmètres utilisateurs ${schoolWidePhones.length} globaux · ${units.length} unités`);
@@ -798,12 +860,30 @@ async function seedPedagogy(
       enrollment: { classId },
     },
   });
+  const reportCards = createReportCardsService(prisma, createAuditService(prisma));
   if (existingReportCards !== enrollments.length)
-    await createReportCardsService(prisma, createAuditService(prisma)).generate(schoolId, {
+    await reportCards.generate(schoolId, {
       academicYearId: academic.yearId,
       periodId: period1.id,
       classId,
     });
+  // Publiés, ces bulletins deviennent consultables et téléchargeables par les
+  // familles de démonstration dans l'application parent.
+  const drafts = await prisma.reportCard.findMany({
+    where: {
+      schoolId,
+      periodId: period1.id,
+      enrollment: { classId },
+      status: 'DRAFT',
+      overallAverage: { not: null },
+    },
+    select: { id: true },
+  });
+  if (drafts.length)
+    await reportCards.publish(
+      schoolId,
+      drafts.map((card) => card.id),
+    );
   log(
     `Pédagogie              ${subjectDefinitions.length} matières · ${assignments.length} affectations · ${enrollments.length} bulletins`,
   );

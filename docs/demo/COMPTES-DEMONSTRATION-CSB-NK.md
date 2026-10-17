@@ -12,6 +12,11 @@ Mot de passe commun hors production : `CSBNoutchaDemo2026!`.
 | Scolarité | `scolarite@csb-noutcha-kamgue.local` | Quatre cycles, sélection explicite |
 | Enseignante | `enseignant@csb-noutcha-kamgue.local` | Affectations propres |
 | Enseignant | `enseignant2@csb-noutcha-kamgue.local` | Affectations propres |
-| Parent | `+237699123456` | Enfants liés et acceptés |
+| Promoteur | `promoteur@csb-noutcha-kamgue.local` | Établissement |
+| Économe principale | `econome@csb-noutcha-kamgue.local` | Établissement |
+| Gestionnaire RH | `rh@csb-noutcha-kamgue.local` | Établissement |
+| Chargée de communication | `communication@csb-noutcha-kamgue.local` | Établissement |
+| Directrice du primaire (responsable de cycle) | `primaire@csb-noutcha-kamgue.local` | Primaire uniquement |
+| Parent | `+237699123456` | Enfants liés et acceptés ; bulletins du trimestre 1 publiés |
 
 Ces comptes doivent être supprimés avant toute mise en production. Le seed est destiné uniquement au développement et à la recette.

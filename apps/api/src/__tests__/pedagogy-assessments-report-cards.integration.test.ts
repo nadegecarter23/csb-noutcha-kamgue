@@ -5,6 +5,8 @@ import { createPedagogyService } from '../modules/pedagogy/pedagogy.service.js';
 import { createAssessmentsService } from '../modules/assessments/assessments.service.js';
 import { createReportCardsService } from '../modules/report-cards/report-cards.service.js';
 import { createPortalService } from '../modules/portal/portal.service.js';
+import { createParentService } from '../modules/parent/parent.service.js';
+import { createPaymentsService } from '../modules/finance/payments.service.js';
 import { closeTestDatabase, resetTestData, testDatabase } from './helpers/test-app.js';
 
 const db = testDatabase();
@@ -339,5 +341,163 @@ describe('matières, évaluations et bulletins', () => {
         cards.map((card) => card.id),
       ),
     ).rejects.toThrow(/clôturée/);
+  });
+});
+
+describe('scolarité visible par les familles', () => {
+  it('montre au parent les notes publiées, les présences validées et ses bulletins publiés', async () => {
+    await assessments.createPolicy(schoolId, {
+      academicYearId: yearId,
+      cycle: null,
+      roundingDigits: 2,
+      weightingMode: 'WEIGHTED_AVERAGE',
+      absenceHandling: 'EXCLUDE',
+      rankingEnabled: true,
+    });
+    await createGradedAssessment({
+      assignmentId: mathAssignmentId,
+      title: 'Interrogation de géométrie',
+      date: '2026-10-01',
+      maxScore: 20,
+      scores: [15, 12],
+    });
+    await assessments.updatePeriodStatus(schoolId, periodId, { status: 'CLOSED' });
+    await reportCards.generate(schoolId, { academicYearId: yearId, periodId, classId });
+    const cards = await reportCards.list(schoolId, { academicYearId: yearId, periodId, classId });
+    // Une évaluation encore en brouillon (trimestre suivant) ne doit pas apparaître.
+    const nextPeriod = await assessments.createPeriod(schoolId, {
+      academicYearId: yearId,
+      name: 'Trimestre 2',
+      orderIndex: 2,
+      startDate: '2027-01-04',
+      endDate: '2027-03-31',
+    });
+    await assessments.updatePeriodStatus(schoolId, nextPeriod.id, { status: 'OPEN' });
+    const draft = await assessments.createAssessment(schoolId, {
+      academicYearId: yearId,
+      periodId: nextPeriod.id,
+      teachingAssignmentId: frenchAssignmentId,
+      typeId,
+      title: 'Dictée non publiée',
+      date: '2027-01-10',
+      maxScore: 20,
+      competencyIds: [],
+    });
+    await assessments.saveGrades(schoolId, draft.id, {
+      grades: draft.grades.map((grade) => ({
+        enrollmentId: grade.enrollmentId,
+        score: 4,
+        isAbsent: false,
+        comment: null,
+      })),
+    });
+    await reportCards.publish(
+      schoolId,
+      cards.map((card) => card.id),
+    );
+
+    // Présences : seule la séance validée compte.
+    const teacher = await db.user.create({
+      data: { firstName: 'Prof', lastName: 'Test', phone: '+237690000201' },
+    });
+    const entry = await db.timetableEntry.create({
+      data: {
+        schoolId,
+        academicYearId: yearId,
+        teachingAssignmentId: mathAssignmentId,
+        classId,
+        dayOfWeek: 1,
+        startTime: new Date('1970-01-01T08:00:00Z'),
+        endTime: new Date('1970-01-01T09:00:00Z'),
+        status: 'PUBLISHED',
+      },
+    });
+    const [aliceEnrollment, borisEnrollment] = enrollmentIds;
+    const [aliceId, borisId] = studentIds;
+    if (!aliceEnrollment || !borisEnrollment || !aliceId || !borisId)
+      throw new Error('Données de test introuvables.');
+    for (const [date, status, mark] of [
+      ['2026-10-05', 'VALIDATED', 'ABSENT'],
+      ['2026-10-06', 'DRAFT', 'LATE'],
+    ] as const) {
+      const session = await db.attendanceSession.create({
+        data: {
+          schoolId,
+          academicYearId: yearId,
+          timetableEntryId: entry.id,
+          classId,
+          date: new Date(date),
+          status,
+          recordedBy: teacher.id,
+        },
+      });
+      await db.attendanceRecord.create({
+        data: { schoolId, sessionId: session.id, enrollmentId: aliceEnrollment, mark },
+      });
+    }
+
+    const parentUser = await db.user.create({
+      data: { firstName: 'Maman', lastName: 'Alice', phone: '+237690000202' },
+    });
+    const guardian = await db.guardian.create({
+      data: {
+        schoolId,
+        userId: parentUser.id,
+        firstName: 'Maman',
+        lastName: 'Alice',
+        phone: '+237690000202',
+      },
+    });
+    await db.studentGuardian.create({
+      data: {
+        studentId: aliceId,
+        guardianId: guardian.id,
+        relationship: 'MERE',
+        status: 'ACCEPTED',
+      },
+    });
+    const parent = createParentService(db, createPaymentsService(db, audit), reportCards);
+
+    const academics = await parent.academics(parentUser.id, aliceId);
+    expect(academics.className).toBe('6e A');
+    expect(academics.reportCards).toEqual([
+      expect.objectContaining({
+        periodName: 'Trimestre 1',
+        overallAverage: 15,
+        rank: 1,
+        rankedCount: 2,
+      }),
+    ]);
+    expect(academics.grades).toEqual([
+      expect.objectContaining({
+        title: 'Interrogation de géométrie',
+        subjectName: 'Mathématiques',
+        score: 15,
+        maxScore: 20,
+        scoreOn20: 15,
+      }),
+    ]);
+    expect(academics.attendance).toMatchObject({
+      sessions: 1,
+      absent: 1,
+      late: 0,
+      rate: 0,
+      unjustifiedAbsences: 1,
+    });
+    expect(academics.attendance.events[0]).toMatchObject({ date: '2026-10-05', mark: 'ABSENT' });
+
+    const aliceCard = academics.reportCards[0];
+    if (!aliceCard) throw new Error('Bulletin absent.');
+    const pdf = await parent.reportCardPdf(parentUser.id, aliceCard.id);
+    expect(Buffer.from(pdf.content).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdf.fileName).toMatch(/^Bulletin_Test-Alice_Trimestre-1_/);
+
+    // Ni l'enfant d'une autre famille, ni un bulletin repassé en brouillon.
+    const borisCard = cards.find((card) => card.enrollmentId === borisEnrollment);
+    if (!borisCard) throw new Error('Bulletin de Boris absent.');
+    await expect(parent.academics(parentUser.id, borisId)).rejects.toThrow(/introuvable/);
+    await expect(parent.reportCardPdf(parentUser.id, borisCard.id)).rejects.toThrow(/introuvable/);
+    await db.reportCard.update({ where: { id: aliceCard.id }, data: { status: 'DRAFT' } });
+    await expect(parent.reportCardPdf(parentUser.id, aliceCard.id)).rejects.toThrow(/introuvable/);
   });
 });

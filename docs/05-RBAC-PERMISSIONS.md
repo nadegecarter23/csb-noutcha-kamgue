@@ -26,14 +26,24 @@ Le rôle est un **regroupement de permissions**, pas une valeur testée dans le 
 |---|---|---|---|
 | `SUPER_ADMIN` | Super administrateur CSB Noutcha KAMGUE | Plateforme | Éditeur de la plateforme. Multi-établissement. |
 | `SCHOOL_ADMIN` | Administrateur établissement | École | Tous les droits sur son école, sauf plateforme. |
-| `DIRECTOR` | Direction | École | Consultation globale + approbations sensibles. |
-| `ACCOUNTANT` | Comptable | École | Configuration des frais, validation, contrepassation, exports. |
+| `DIRECTOR` | Direction | École | Consultation globale et **approbation** (achats, dépenses, remises, contrepassations). N'engage ni ne paie de dépense. |
+| `ACCOUNTANT` | Comptable | École | Configuration des frais, validation, contrepassation, exports ; saisit les factures fournisseurs sans les approuver ni les payer. |
 | `CASHIER` | Caissier | École | Encaissement au guichet, impression de reçus. |
 | `REGISTRAR` | Scolarité / Secrétariat | École | Élèves, inscriptions, responsables, classes, imports. |
-| `TEACHER` | Enseignant | École | **Aucune permission en V1** (réservé au module pédagogique V2). |
+| `TEACHER` | Enseignant | École | Appels, notes, appréciations et **devoirs** (`homework.manage`) de ses classes. Ne publie pas d'annonces. |
+| `PROMOTER` | Promoteur | École | Vision globale, tableaux de bord, audit et décisions sensibles. Aucune saisie opérationnelle. |
+| `BURSAR` | Économe principal | École | Finances de tous les cycles : frais, caisses, rapprochements, budgets, achats, paiements fournisseurs. Les dépenses qu'il engage sont approuvées par la direction ou le promoteur. |
+| `HR_MANAGER` | Gestionnaire RH | École | Dossiers du personnel, affectations, congés. |
+| `COMMUNICATION_OFFICER` | Chargé de communication | École | Annonces, événements et notifications ; aucun accès aux notes, à la santé ni aux finances individuelles. |
+| `CYCLE_HEAD` | Responsable de cycle | École | Direction pédagogique et vie scolaire d'un cycle. Le **périmètre** attribué (ex. `UNIT` primaire) limite ses données. |
 | `PARENT` | Parent / Responsable | Hors école | Accès à ses enfants associés en `ACCEPTED` uniquement. |
+| `STUDENT` | Élève | École | Portail personnel. |
 
-`roles.is_system = true` pour ces huit rôles : non supprimables, non renommables. Un établissement peut créer des rôles supplémentaires (`is_system = false`) en combinant des permissions existantes.
+`roles.is_system = true` pour ces rôles : non supprimables, non renommables. Un établissement peut créer des rôles supplémentaires (`is_system = false`) en combinant des permissions existantes.
+
+Un rôle répond à « que peut faire l'utilisateur ? », le périmètre (`user_access_scopes`) à « sur quelles données ? ». Un responsable de cycle et un directeur partagent des permissions pédagogiques ; c'est leur périmètre qui les distingue.
+
+**Séparation des tâches financières** : l'auteur d'un bon d'achat, d'une dépense ou d'une remise au-dessus du seuil ne peut pas l'approuver (contrôle API). Les rôles sont répartis en conséquence : l'économe et le comptable engagent, la direction et le promoteur approuvent, l'économe paie.
 
 ---
 

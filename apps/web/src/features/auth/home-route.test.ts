@@ -30,6 +30,11 @@ describe('homeRouteFor', () => {
     ['TEACHER', ['academic_years.read', 'portal.read'], 'school-1', '/portal'],
     ['PARENT', ['portal.read'], 'school-1', '/portal'],
     ['STUDENT', ['portal.read'], 'school-1', '/portal'],
+    ['PROMOTER', ['reports.director.read'], 'school-1', '/direction'],
+    ['BURSAR', ['reports.financial.read'], 'school-1', '/accounting'],
+    ['HR_MANAGER', ['academic_years.read', 'staff.read'], 'school-1', '/staff'],
+    ['COMMUNICATION_OFFICER', ['academic_years.read'], 'school-1', '/communications'],
+    ['CYCLE_HEAD', ['academic_years.read'], 'school-1', '/school'],
   ])('redirige %s vers %s', (role, permissions, schoolId, expected) => {
     expect(homeRouteFor(user(role, permissions as string[], schoolId))).toBe(expected);
   });

@@ -6,3 +6,6 @@ build
 coverage
 pnpm-lock.yaml
 *.md
+
+# Généré par Expo à chaque démarrage (ignoré par Git)
+expo-env.d.ts

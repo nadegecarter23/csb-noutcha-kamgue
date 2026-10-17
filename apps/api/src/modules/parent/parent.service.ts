@@ -1,10 +1,15 @@
 import { Prisma } from '@prisma/client';
+import type { ParentAcademicsDto } from '@cplan/contracts';
 import type { Database } from '../../platform/db.js';
 import { errors } from '../../platform/errors.js';
 import { withPlatformScope } from '../../platform/school-scope.js';
 import type { PaymentsService } from '../finance/payments.service.js';
+import type { ReportCardsService } from '../report-cards/report-cards.service.js';
 
 const n = (value: bigint | null | undefined) => Number(value ?? 0n);
+// Notes, barèmes et moyennes sont stockés en centièmes de point.
+const points = (value: number | null) => (value === null ? null : value / 100);
+const day = (value: Date) => value.toISOString().slice(0, 10);
 const balance = (row?: { total_due: bigint; total_paid: bigint; balance: bigint }) => ({
   totalDue: n(row?.total_due),
   totalPaid: n(row?.total_paid),
@@ -16,7 +21,11 @@ const parentPaymentInclude = {
 } satisfies Prisma.PaymentInclude;
 type ParentPaymentRow = Prisma.PaymentGetPayload<{ include: typeof parentPaymentInclude }>;
 
-export function createParentService(db: Database, payments: PaymentsService) {
+export function createParentService(
+  db: Database,
+  payments: PaymentsService,
+  reportCards: ReportCardsService,
+) {
   async function accepted(userId: string, studentId?: string, finances = false) {
     return withPlatformScope(db, (tx) =>
       tx.studentGuardian.findFirst({
@@ -207,6 +216,158 @@ export function createParentService(db: Database, payments: PaymentsService) {
           })),
         };
       });
+    },
+    /**
+     * Scolarité de l'enfant : bulletins publiés, notes des évaluations publiées
+     * et présences des séances validées. Rien de ce qui est encore en brouillon
+     * côté école n'est montré aux familles.
+     */
+    async academics(userId: string, studentId: string): Promise<ParentAcademicsDto> {
+      const link = await accepted(userId, studentId);
+      if (!link) throw errors.notFound('Enfant introuvable.');
+      const enrollments = link.student.enrollments;
+      const current = enrollments.find((e) => e.academicYear.isCurrent) ?? null;
+      return withPlatformScope(db, async (tx) => {
+        const [cards, grades, records] = await Promise.all([
+          enrollments.length
+            ? tx.reportCard.findMany({
+                where: {
+                  enrollmentId: { in: enrollments.map((e) => e.id) },
+                  status: 'PUBLISHED',
+                },
+                include: { period: true },
+                orderBy: { publishedAt: 'desc' },
+              })
+            : [],
+          current
+            ? tx.grade.findMany({
+                where: {
+                  enrollmentId: current.id,
+                  assessment: { status: { in: ['PUBLISHED', 'LOCKED'] } },
+                },
+                include: {
+                  assessment: {
+                    include: { period: true, teachingAssignment: { include: { subject: true } } },
+                  },
+                },
+                orderBy: { assessment: { date: 'desc' } },
+                take: 100,
+              })
+            : [],
+          current
+            ? tx.attendanceRecord.findMany({
+                where: { enrollmentId: current.id, session: { status: 'VALIDATED' } },
+                include: {
+                  session: {
+                    include: {
+                      timetableEntry: {
+                        include: { teachingAssignment: { include: { subject: true } } },
+                      },
+                    },
+                  },
+                },
+                orderBy: { session: { date: 'desc' } },
+              })
+            : [],
+        ]);
+        const enrollmentById = new Map(enrollments.map((e) => [e.id, e]));
+        const rankedCounts = await Promise.all(
+          cards.map((card) => {
+            const classId = enrollmentById.get(card.enrollmentId)?.classId;
+            return classId
+              ? tx.reportCard.count({
+                  where: {
+                    periodId: card.periodId,
+                    status: 'PUBLISHED',
+                    overallAverage: { not: null },
+                    enrollment: { classId },
+                  },
+                })
+              : Promise.resolve(0);
+          }),
+        );
+        const count = (mark: string) => records.filter((r) => r.mark === mark).length;
+        const present = count('PRESENT'),
+          late = count('LATE'),
+          absent = count('ABSENT'),
+          excused = count('EXCUSED');
+        return {
+          academicYear: current?.academicYear.name ?? null,
+          className: current?.class?.name ?? null,
+          attendance: {
+            sessions: records.length,
+            present,
+            late,
+            absent,
+            excused,
+            rate: records.length
+              ? Math.round(((present + late) * 10000) / records.length) / 100
+              : null,
+            unjustifiedAbsences: records.filter(
+              (r) => r.mark === 'ABSENT' && r.justificationStatus !== 'ACCEPTED',
+            ).length,
+            events: records
+              .filter((r) => r.mark !== 'PRESENT')
+              .slice(0, 30)
+              .map((r) => ({
+                id: r.id,
+                date: day(r.session.date),
+                mark: r.mark as 'ABSENT' | 'LATE' | 'EXCUSED',
+                minutesLate: r.minutesLate,
+                subjectName: r.session.timetableEntry.teachingAssignment.subject.name,
+                justificationStatus: r.justificationStatus,
+              })),
+          },
+          grades: grades.map((grade) => {
+            const score = grade.isAbsent ? null : points(grade.score);
+            const maxScore = grade.assessment.maxScore / 100;
+            return {
+              id: grade.id,
+              date: day(grade.assessment.date),
+              title: grade.assessment.title,
+              subjectName: grade.assessment.teachingAssignment.subject.name,
+              periodName: grade.assessment.period.name,
+              score,
+              maxScore,
+              scoreOn20: score === null ? null : Math.round((score / maxScore) * 2000) / 100,
+              isAbsent: grade.isAbsent,
+              comment: grade.comment,
+            };
+          }),
+          reportCards: cards.map((card, index) => {
+            const enrollment = enrollmentById.get(card.enrollmentId);
+            return {
+              id: card.id,
+              academicYear: enrollment?.academicYear.name ?? '',
+              periodName: card.period.name,
+              className: enrollment?.class?.name ?? null,
+              overallAverage: points(card.overallAverage),
+              rank: card.rank,
+              rankedCount: rankedCounts[index] ?? 0,
+              decision: card.decision,
+              publishedAt: (card.publishedAt ?? card.updatedAt).toISOString(),
+            };
+          }),
+        };
+      });
+    },
+    /** Bulletin PDF d'un enfant, uniquement lorsqu'il est publié. */
+    async reportCardPdf(userId: string, reportCardId: string) {
+      const card = await withPlatformScope(db, (tx) =>
+        tx.reportCard.findUnique({
+          where: { id: reportCardId },
+          select: { schoolId: true, status: true, enrollment: { select: { studentId: true } } },
+        }),
+      );
+      // Même réponse pour un bulletin inexistant, non publié ou d'un autre
+      // enfant : on ne révèle pas son existence.
+      if (
+        !card ||
+        card.status !== 'PUBLISHED' ||
+        !(await accepted(userId, card.enrollment.studentId))
+      )
+        throw errors.notFound('Bulletin introuvable.');
+      return reportCards.pdf(card.schoolId, reportCardId, { trusted: true });
     },
     async statement(userId: string, enrollmentId: string) {
       const enrollment = await withPlatformScope(db, (tx) =>

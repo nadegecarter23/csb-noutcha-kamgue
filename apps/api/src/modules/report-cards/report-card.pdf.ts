@@ -441,8 +441,8 @@ export async function renderReportCardPdf(
       ['NÉ(E) LE', context.studentBirthDate ? formatDate(context.studentBirthDate, 'UTC') : '—'],
       ['EFFECTIF', context.classSize ? `${context.classSize} élèves` : '—'],
     ];
-    // Le matricule est la valeur la plus longue : il reçoit la colonne la plus large.
-    const weights = [1.4, 1.05, 0.85, 0.7];
+    // Matricule et classe (« 6e A francophone ») sont les valeurs les plus longues.
+    const weights = [1.25, 1.4, 0.8, 0.7];
     const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
     let x = M + 14;
     fields.forEach(([label, value], index) => {

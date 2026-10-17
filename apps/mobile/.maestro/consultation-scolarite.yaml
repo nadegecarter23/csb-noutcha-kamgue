@@ -1,0 +1,29 @@
+appId: cm.cplan.app
+name: Consultation de la scolarité d'un enfant
+---
+- launchApp:
+    clearState: true
+- tapOn: 'Se connecter'
+- tapOn:
+    id: 'login-phone'
+- inputText: ${PARENT_PHONE}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PARENT_PASSWORD}
+- hideKeyboard
+- tapOn: 'Se connecter'
+- tapOn: 'Continuer vers mon espace'
+- tapOn:
+    id: 'child-.*'
+- assertVisible: 'Détail de l’enfant'
+- tapOn:
+    id: 'child-results'
+- assertVisible: 'Scolarité'
+- tapOn:
+    id: 'results-tab-grades'
+- tapOn:
+    id: 'results-tab-attendance'
+- tapOn:
+    id: 'results-tab-reports'
+- assertVisible:
+    id: 'results-tab-reports'

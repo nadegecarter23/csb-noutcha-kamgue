@@ -12,6 +12,10 @@ const expectedFlows = new Map([
     'preparation-paiement.yaml',
     ['payment-amount', 'payment-provider-ORANGE_MONEY', 'Paiement des frais'],
   ],
+  [
+    'consultation-scolarite.yaml',
+    ['child-results', 'results-tab-grades', 'results-tab-attendance', 'Scolarité'],
+  ],
 ]);
 
 const files = (await readdir(flowsDirectory)).filter((file) => file.endsWith('.yaml')).sort();
@@ -47,6 +51,6 @@ if (failures.length) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Maestro : ${files.length} flux critiques valides (connexion, association, paiement sans transaction).`,
+    `Maestro : ${files.length} flux critiques valides (connexion, association, paiement sans transaction, scolarité).`,
   );
 }

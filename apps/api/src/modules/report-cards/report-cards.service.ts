@@ -9,7 +9,7 @@ import type { Database } from '../../platform/db.js';
 import type { AuditService } from '../../platform/audit.js';
 import { AuditAction } from '../../platform/audit.js';
 import { errors } from '../../platform/errors.js';
-import { withSchoolScope } from '../../platform/school-scope.js';
+import { withPlatformScope, withSchoolScope } from '../../platform/school-scope.js';
 import { buildDocumentBrand } from '../../platform/document-brand.js';
 import { renderReportCardPdf } from './report-card.pdf.js';
 
@@ -325,8 +325,16 @@ export function createReportCardsService(db: Database, audit: AuditService) {
         return { published: cards.length };
       });
     },
-    async pdf(schoolId: string, id: string) {
-      const { row, siblings, school } = await withSchoolScope(db, schoolId, async (tx) => {
+    /**
+     * `trusted` : l'appelant a déjà vérifié le droit d'accès (parent d'un élève,
+     * par exemple). La lecture se fait alors hors RLS afin que les statistiques
+     * de classe portent sur toute la classe et non sur le seul enfant visible ;
+     * chaque requête reste explicitement filtrée sur l'établissement.
+     */
+    async pdf(schoolId: string, id: string, options: { trusted?: boolean } = {}) {
+      const scope = <T>(work: (tx: Prisma.TransactionClient) => Promise<T>) =>
+        options.trusted ? withPlatformScope(db, work) : withSchoolScope(db, schoolId, work);
+      const { row, siblings, school } = await scope(async (tx) => {
         const row = await tx.reportCard.findFirst({
           where: { id, schoolId },
           include: {

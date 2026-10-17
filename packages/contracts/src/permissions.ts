@@ -217,7 +217,13 @@ export const PERMISSIONS = [
   },
   {
     code: 'communications.manage',
-    description: 'Publier les annonces, événements et devoirs',
+    description: 'Publier les annonces et les événements',
+    group: 'communications',
+    phase: 25,
+  },
+  {
+    code: 'homework.manage',
+    description: 'Publier les devoirs de ses classes',
     group: 'communications',
     phase: 25,
   },

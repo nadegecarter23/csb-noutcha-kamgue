@@ -301,7 +301,8 @@ export async function buildApp(deps: AppDependencies) {
       const attendanceService = createAttendanceService(db, audit, notificationsService);
       await api.register(attendanceRoutes(attendanceService));
       await api.register(assessmentsRoutes(createAssessmentsService(db, audit)));
-      await api.register(reportCardsRoutes(createReportCardsService(db, audit)));
+      const reportCardsService = createReportCardsService(db, audit);
+      await api.register(reportCardsRoutes(reportCardsService));
       await api.register(studentLifeRoutes(createStudentLifeService(db, audit)));
       await api.register(staffRoutes(createStaffService(db, audit)));
       await api.register(communicationsRoutes(createCommunicationsService(db, audit)));
@@ -311,7 +312,7 @@ export async function buildApp(deps: AppDependencies) {
       await api.register(financeRoutes(financeService, paymentsService));
       const cashService = createCashService(db, audit, paymentsService);
       await api.register(cashRoutes(cashService));
-      const parentService = createParentService(db, paymentsService);
+      const parentService = createParentService(db, paymentsService, reportCardsService);
       await api.register(parentRoutes(parentService));
       await api.register(notificationRoutes(notificationsService));
       const paymentProviders = createPaymentProviderRegistry(config);

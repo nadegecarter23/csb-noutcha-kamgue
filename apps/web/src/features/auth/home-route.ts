@@ -14,15 +14,20 @@ export function homeRouteFor(user: CurrentUser | null): string {
 
   if (permissions.has('schools.manage') && !user.currentSchoolId) return '/platform';
   if (roles.has('PARENT') || roles.has('STUDENT') || roles.has('TEACHER')) return '/portal';
-  if (roles.has('DIRECTOR')) return '/direction';
-  if (roles.has('ACCOUNTANT')) return '/accounting';
+  if (roles.has('DIRECTOR') || roles.has('PROMOTER')) return '/direction';
+  if (roles.has('ACCOUNTANT') || roles.has('BURSAR')) return '/accounting';
   if (roles.has('CASHIER')) return '/cashier';
-  if (roles.has('REGISTRAR') || roles.has('SCHOOL_ADMIN')) return '/school';
+  if (roles.has('HR_MANAGER')) return '/staff';
+  if (roles.has('COMMUNICATION_OFFICER')) return '/communications';
+  if (roles.has('REGISTRAR') || roles.has('SCHOOL_ADMIN') || roles.has('CYCLE_HEAD'))
+    return '/school';
 
   if (permissions.has('portal.read')) return '/portal';
   if (permissions.has('reports.director.read')) return '/direction';
   if (permissions.has('reports.financial.read')) return '/accounting';
   if (permissions.has('payments.create_cash')) return '/cashier';
   if (permissions.has('academic_years.read')) return '/school';
+  if (permissions.has('staff.read')) return '/staff';
+  if (permissions.has('communications.read')) return '/communications';
   return '/profile';
 }

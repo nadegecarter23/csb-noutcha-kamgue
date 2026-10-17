@@ -50,6 +50,7 @@ export function CommunicationsPage() {
     },
   });
   const canManage = Boolean(user?.permissions.includes('communications.manage'));
+  const canHomework = Boolean(user?.permissions.includes('homework.manage'));
   const canMessage = Boolean(user?.permissions.includes('messages.send'));
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -101,7 +102,7 @@ export function CommunicationsPage() {
         },
       });
   };
-  const canCompose = tab === 'messages' ? canMessage : canManage;
+  const canCompose = tab === 'messages' ? canMessage : tab === 'homework' ? canHomework : canManage;
   return (
     <section className="communications-page">
       <header>
