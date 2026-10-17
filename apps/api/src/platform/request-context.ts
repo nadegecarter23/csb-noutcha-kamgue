@@ -17,6 +17,8 @@ export interface RequestContext {
   readonly schoolId?: string;
   readonly permissions?: readonly string[];
   readonly accessScopes?: readonly AccessScopeContext[];
+  /** Périmètre choisi dans l'interface ; appliqué par la RLS en plus des droits. */
+  readonly activeScope?: AccessScopeContext | null;
   readonly ipAddress?: string;
   readonly userAgent?: string;
 }
@@ -41,10 +43,14 @@ export function getContext(): RequestContext | undefined {
 
 /** Met à jour le magasin asynchrone après authentification. */
 export function updateContext(patch: Partial<RequestContext>): RequestContext {
+  // On complète l'objet de contexte de la requête au lieu d'en installer un
+  // nouveau avec `enterWith` : celui-ci ne vaudrait que dans la fonction
+  // appelante (le hook d'authentification) et le traitement de la route
+  // retrouverait un contexte sans utilisateur — la RLS ne connaîtrait alors ni
+  // l'utilisateur ni son périmètre. Chaque requête possède son propre objet
+  // (créé par le plugin de contexte), la mutation reste donc isolée.
   const current = requireContext();
-  const next = { ...current, ...patch };
-  storage.enterWith(next);
-  return next;
+  return Object.assign(current, patch);
 }
 
 /**

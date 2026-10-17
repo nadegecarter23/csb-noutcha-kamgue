@@ -60,6 +60,28 @@ function selectedScope(request: FastifyRequest, granted: readonly AccessScopeCon
     const item = request.headers[name];
     return Array.isArray(item) ? item[0] : item;
   };
+  // Un périmètre global peut se concentrer sur n'importe quel cycle, section,
+  // filière ou classe de l'établissement : la RLS combine ce choix à ses droits.
+  if (granted.some((scope) => scope.type === 'SCHOOL') && type !== 'SCHOOL') {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const focus = {
+      UNIT: 'x-organizational-unit-id',
+      LANGUAGE_SECTION: 'x-language-section-id',
+      TRACK: 'x-education-track-id',
+      CLASS: 'x-class-id',
+    } as const;
+    const header = focus[type as keyof typeof focus];
+    const id = header ? value(header) : undefined;
+    if (!header || !id || !uuid.test(id))
+      throw errors.validation('Le périmètre actif demandé est invalide.');
+    return {
+      type: type as AccessScopeContext['type'],
+      ...(type === 'UNIT' && { organizationalUnitId: id }),
+      ...(type === 'LANGUAGE_SECTION' && { languageSectionId: id }),
+      ...(type === 'TRACK' && { educationTrackId: id }),
+      ...(type === 'CLASS' && { classId: id }),
+    };
+  }
   const match = granted.find(
     (scope) =>
       scope.type === type &&
@@ -190,6 +212,7 @@ export const authPlugin = fp<AuthPluginOptions>(
         ...(payload.schoolId && { schoolId: payload.schoolId }),
         permissions: payload.permissions,
         accessScopes: requestScopes,
+        activeScope: activeScope && activeScope.type !== 'SCHOOL' ? activeScope : null,
       });
     });
 

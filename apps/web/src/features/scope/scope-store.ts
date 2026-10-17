@@ -10,6 +10,8 @@ export type ActiveScope = {
   educationTrackId?: string | null;
   classId?: string | null;
   label: string;
+  /** Cycle sous lequel l'option est regroupée dans le sélecteur. */
+  group?: string;
 };
 
 function read(): ActiveScope | null {
@@ -39,9 +41,55 @@ export const useScopeStore = create<ScopeState>((set) => ({
   },
 }));
 
-export function availableScopes(scopes: AccessScopeDto[]): ActiveScope[] {
+type OrganizationUnit = {
+  id: string;
+  name: string;
+  status: string;
+  languageSections: Array<{ id: string; name: string; status: string }>;
+  educationTracks: Array<{ id: string; name: string; status: string }>;
+};
+
+/**
+ * Périmètres proposés dans le sélecteur.
+ *
+ * Un périmètre global peut se concentrer sur un cycle, une section linguistique
+ * ou une filière : l'API transmet ce choix à la base, qui ne montre plus que
+ * les données de ce périmètre.
+ */
+export function availableScopes(
+  scopes: AccessScopeDto[],
+  organization: OrganizationUnit[] = [],
+): ActiveScope[] {
   if (scopes.some((scope) => scope.type === 'SCHOOL'))
-    return [{ type: 'SCHOOL', label: 'Tout l’établissement' }];
+    return [
+      { type: 'SCHOOL', label: 'Tout l’établissement' },
+      ...organization
+        .filter((unit) => unit.status === 'ACTIVE')
+        .flatMap((unit): ActiveScope[] => [
+          {
+            type: 'UNIT',
+            organizationalUnitId: unit.id,
+            label: `Tout le cycle ${unit.name.toLowerCase()}`,
+            group: unit.name,
+          },
+          ...unit.languageSections
+            .filter((section) => section.status === 'ACTIVE')
+            .map((section) => ({
+              type: 'LANGUAGE_SECTION' as const,
+              languageSectionId: section.id,
+              label: `${unit.name} ${section.name.toLowerCase()}`,
+              group: unit.name,
+            })),
+          ...unit.educationTracks
+            .filter((track) => track.status === 'ACTIVE')
+            .map((track) => ({
+              type: 'TRACK' as const,
+              educationTrackId: track.id,
+              label: `${unit.name} · ${track.name.toLowerCase()}`,
+              group: unit.name,
+            })),
+        ]),
+    ];
 
   return scopes
     .filter((scope) => scope.type !== 'OWN_ASSIGNMENTS')

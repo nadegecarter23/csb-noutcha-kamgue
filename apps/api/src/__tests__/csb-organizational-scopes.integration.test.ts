@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
-import { closeTestDatabase, resetTestData, testDatabase } from './helpers/test-app.js';
-import { runWithContext } from '../platform/request-context.js';
+import {
+  buildTestApp,
+  closeTestDatabase,
+  resetTestData,
+  testDatabase,
+} from './helpers/test-app.js';
+import { hashPassword } from '../platform/crypto.js';
+import { runWithContext, type AccessScopeContext } from '../platform/request-context.js';
 import { withSchoolScope } from '../platform/school-scope.js';
 
 const APP_ROLE_URL =
@@ -14,6 +20,7 @@ let schoolId: string;
 let restrictedUserId: string;
 let globalUserId: string;
 let primaryUnitId: string;
+let secondaryUnitId: string;
 let primaryClassId: string;
 let secondaryClassId: string;
 
@@ -30,6 +37,7 @@ beforeEach(async () => {
   const secondary = units.find((unit) => unit.code === 'SECONDAIRE');
   if (!primary || !secondary) throw new Error('Référentiel organisationnel incomplet.');
   primaryUnitId = primary.id;
+  secondaryUnitId = secondary.id;
   const [primarySection, secondarySection, secondaryTrack] = await Promise.all([
     owner.languageSection.findFirstOrThrow({
       where: { organizationalUnitId: primary.id, code: 'FRANCOPHONE' },
@@ -138,8 +146,12 @@ afterAll(async () => {
   await closeTestDatabase();
 });
 
-const scoped = <T>(userId: string, work: Parameters<typeof withSchoolScope<T>>[2]) =>
-  runWithContext({ requestId: `test-${userId}`, userId, schoolId }, () =>
+const scoped = <T>(
+  userId: string,
+  work: Parameters<typeof withSchoolScope<T>>[2],
+  activeScope: AccessScopeContext | null = null,
+) =>
+  runWithContext({ requestId: `test-${userId}`, userId, schoolId, activeScope }, () =>
     withSchoolScope(appRole, schoolId, work),
   );
 
@@ -185,6 +197,88 @@ describe('CSB-01 à CSB-03 — organisation et cloisonnement interne', () => {
     expect(result.students).toHaveLength(1);
     expect(result.enrollments).toBe(1);
     expect(result.forbidden).toBeNull();
+  });
+
+  it('applique réellement le périmètre actif choisi dans l’interface', async () => {
+    const focused = { type: 'UNIT' as const, organizationalUnitId: primaryUnitId };
+    // Profil global concentré sur le primaire : la classe du secondaire disparaît.
+    const [classes, students, forbidden] = await scoped(
+      globalUserId,
+      (tx) =>
+        Promise.all([
+          tx.class.findMany(),
+          tx.student.count(),
+          tx.class.findUnique({ where: { id: secondaryClassId } }),
+        ]),
+      focused,
+    );
+    expect(classes.map((row) => row.id)).toEqual([primaryClassId]);
+    expect(students).toBe(1);
+    expect(forbidden).toBeNull();
+    // Le choix ne donne aucun droit : un profil limité au primaire qui demande
+    // le secondaire ne voit rien.
+    const outside = await scoped(restrictedUserId, (tx) => tx.class.count(), {
+      type: 'UNIT',
+      organizationalUnitId: secondaryUnitId,
+    });
+    expect(outside).toBe(0);
+  });
+
+  it('applique droits et périmètre actif sur une vraie requête HTTP', async () => {
+    // Régression : l'identité posée à l'authentification n'atteignait pas la
+    // base (contexte perdu), si bien que la RLS laissait tout voir via l'API.
+    const permission = await owner.permission.upsert({
+      where: { code: 'classes.read' },
+      update: {},
+      create: { code: 'classes.read', description: 'Consulter les classes', group: 'academic' },
+    });
+    const role = await owner.role.create({
+      data: { code: 'TEST_CLASSES', name: 'Lecture des classes', schoolId },
+    });
+    await owner.rolePermission.create({ data: { roleId: role.id, permissionId: permission.id } });
+    const passwordHash = await hashPassword('MotDePasseTest1');
+    for (const userId of [restrictedUserId, globalUserId]) {
+      await owner.user.update({
+        where: { id: userId },
+        data: { passwordHash, phoneVerifiedAt: new Date() },
+      });
+      await owner.userRole.create({ data: { userId, roleId: role.id, schoolId } });
+    }
+    const app = await buildTestApp({ db: appRole });
+    try {
+      const token = async (phone: string) =>
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/v1/auth/login',
+            payload: { identifier: phone, password: 'MotDePasseTest1' },
+          })
+        ).json().tokens.accessToken as string;
+      const year = await owner.academicYear.findFirstOrThrow({ where: { schoolId } });
+      const classes = async (accessToken: string, headers: Record<string, string> = {}) =>
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/api/v1/classes?academic_year_id=${year.id}`,
+            headers: { authorization: `Bearer ${accessToken}`, ...headers },
+          })
+        )
+          .json()
+          .map((row: { id: string }) => row.id)
+          .sort();
+
+      expect(await classes(await token('+237699310001'))).toEqual([primaryClassId]);
+      const global = await token('+237699310002');
+      expect(await classes(global)).toEqual([primaryClassId, secondaryClassId].sort());
+      expect(
+        await classes(global, {
+          'x-active-scope-type': 'UNIT',
+          'x-organizational-unit-id': primaryUnitId,
+        }),
+      ).toEqual([primaryClassId]);
+    } finally {
+      await app.close();
+    }
   });
 
   it('la portée établissement conserve la vision complète', async () => {

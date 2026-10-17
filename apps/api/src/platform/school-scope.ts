@@ -31,6 +31,12 @@ export async function withSchoolScope<T>(
       // interpoler un identifiant dans du SQL est une injection en puissance.
       await tx.$executeRaw`SELECT set_config('app.school_id', ${schoolId}::text, true)`;
       await tx.$executeRaw`SELECT set_config('app.user_id', ${getContext()?.userId ?? ''}::text, true)`;
+      const active = getContext()?.activeScope;
+      await tx.$executeRaw`SELECT
+        set_config('app.active_unit_id', ${active?.organizationalUnitId ?? ''}::text, true),
+        set_config('app.active_section_id', ${active?.languageSectionId ?? ''}::text, true),
+        set_config('app.active_track_id', ${active?.educationTrackId ?? ''}::text, true),
+        set_config('app.active_class_id', ${active?.classId ?? ''}::text, true)`;
       return work(tx);
     },
     {
