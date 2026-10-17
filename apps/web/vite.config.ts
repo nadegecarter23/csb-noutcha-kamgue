@@ -1,9 +1,32 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv, type UserConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
-export default defineConfig(({ mode }) => ({
+/**
+ * Garde-fou Vercel : un build sans adresse d'API publique produirait un
+ * dashboard qui appelle /api/v1 sur Vercel lui-même (page blanche à la
+ * connexion). Le build échoue donc avec un message clair. Les builds locaux et
+ * la CI, sans variable VERCEL, ne sont pas concernés.
+ */
+function assertVercelEnvironment(mode: string) {
+  if (!process.env.VERCEL) return;
+  const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env };
+  const apiUrl = env.VITE_API_BASE_URL ?? '';
+  if (!/^https:\/\/[^/]+.*\/api\/v1\/?$/.test(apiUrl))
+    throw new Error(
+      'VITE_API_BASE_URL doit être définie dans Vercel avec l’URL HTTPS de l’API, par exemple https://api.exemple.cm/api/v1.',
+    );
+  if (process.env.VERCEL_ENV === 'production' && env.VITE_ENABLE_DEMO_MODE === 'true')
+    throw new Error('VITE_ENABLE_DEMO_MODE doit valoir false en production.');
+}
+
+export default defineConfig(({ mode }) => {
+  assertVercelEnvironment(mode);
+  return config(mode);
+});
+
+const config = (mode: string): UserConfig => ({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -47,4 +70,4 @@ export default defineConfig(({ mode }) => ({
     // publiées avec le dashboard de production sur Vercel.
     sourcemap: mode !== 'production',
   },
-}));
+});

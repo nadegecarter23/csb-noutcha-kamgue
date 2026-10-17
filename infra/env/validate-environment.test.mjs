@@ -57,3 +57,15 @@ test('refuse le mode factice, les origines locales et une configuration opérate
   assert.ok(errors.some((error) => error.includes('CORS_ORIGINS')));
   assert.ok(errors.some((error) => error.includes('MTN_MOMO_API_KEY')));
 });
+
+test('refuse que l’API utilise le compte des migrations ou le super-utilisateur', () => {
+  const owner = 'postgresql://postgres:secret@db.csb.test:5432/railway';
+  for (const env of [
+    { ...valid, DATABASE_URL: valid.DATABASE_MIGRATION_URL },
+    { ...valid, DATABASE_URL: owner },
+  ]) {
+    assert.ok(
+      validateDeploymentEnv(env, 'production').some((error) => error.includes('cplan_app')),
+    );
+  }
+});

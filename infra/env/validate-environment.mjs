@@ -90,6 +90,23 @@ export function validateDeploymentEnv(env, target) {
   ) {
     errors.push('DATABASE_MIGRATION_URL doit être une URL PostgreSQL valide.');
   }
+  // L'API doit subir la RLS : jamais le compte propriétaire des migrations ni
+  // le super-utilisateur `postgres` fourni par les bases managées.
+  const databaseUser = (value) => {
+    try {
+      return decodeURIComponent(new URL(value).username);
+    } catch {
+      return '';
+    }
+  };
+  if (env.DATABASE_URL && env.DATABASE_MIGRATION_URL) {
+    const runtimeUser = databaseUser(env.DATABASE_URL);
+    if (runtimeUser === databaseUser(env.DATABASE_MIGRATION_URL) || runtimeUser === 'postgres') {
+      errors.push(
+        'DATABASE_URL doit utiliser le rôle applicatif restreint (cplan_app), distinct du compte des migrations.',
+      );
+    }
+  }
   if (env.REDIS_URL && !validUrl(env.REDIS_URL, ['redis:', 'rediss:'])) {
     errors.push('REDIS_URL doit être une URL Redis valide.');
   }

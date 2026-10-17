@@ -39,9 +39,9 @@ Dans un nouveau projet Railway :
 1. Ajouter une base **PostgreSQL** nommée `Postgres`.
 2. Ajouter un service **Redis** nommé `Redis`.
 3. Ajouter un **Bucket** nommé `Storage`, dans la région la plus proche disponible.
-4. Ajouter le dépôt GitHub du projet comme service et le nommer `school-fees-api`.
+4. Ajouter le dépôt GitHub du projet comme service et le nommer `csb-api`.
 
-Paramètres du service `school-fees-api` :
+Paramètres du service `csb-api` :
 
 | Paramètre | Valeur |
 |---|---|
@@ -74,7 +74,7 @@ Dans **Variables > Raw Editor**, adapter les noms des services et les domaines.
 Correspondances principales :
 
 ```dotenv
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_URL=postgresql://cplan_app:${{shared.CPLAN_APP_DB_PASSWORD}}@${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
 DATABASE_MIGRATION_URL=${{Postgres.DATABASE_URL}}
 REDIS_URL=${{Redis.REDIS_URL}}
 S3_ENDPOINT=${{Storage.ENDPOINT}}
@@ -106,22 +106,44 @@ Ne pas autoriser toutes les URL de Preview Vercel avec un joker. Ajouter une
 origine de preview précise uniquement lorsqu'elle doit réellement accéder à
 l'API de production.
 
-### Isolation PostgreSQL
+### Rôle PostgreSQL applicatif (obligatoire)
 
-La configuration simple ci-dessus utilise le compte PostgreSQL géré par Railway
-pour les migrations et l'API. Elle fonctionne immédiatement, mais un propriétaire
-PostgreSQL peut contourner les politiques RLS : les filtres `schoolId` de
-l'application restent actifs, tandis que cette seconde barrière ne protège pas
-contre une requête applicative défectueuse.
+Le compte `postgres` fourni par Railway est super-utilisateur et propriétaire
+des tables : il **contourne la RLS**. Connectée avec lui, l'API ne cloisonnerait
+plus les établissements ni les cycles, et les pièces financières redeviendraient
+supprimables. L'API refuse donc de démarrer en production avec ce compte, et
+`pnpm deployment:validate` le signale.
 
-Pour un durcissement maximal, créer manuellement un rôle runtime non propriétaire,
-lui accorder seulement les droits nécessaires, conserver l'URL propriétaire dans
-`DATABASE_MIGRATION_URL` et placer l'URL du rôle restreint dans `DATABASE_URL`.
-Cette opération doit être validée sur la base réelle et n'est pas automatisée.
+À faire **une fois par environnement**, de préférence avant le premier
+déploiement de l'API (le script reste valable sur une base déjà migrée) :
+
+1. Générer un mot de passe fort et l'enregistrer dans Railway comme variable
+   partagée `CPLAN_APP_DB_PASSWORD` (**Project Settings > Shared Variables**).
+2. Copier l'URL publique propriétaire du service Postgres
+   (`DATABASE_PUBLIC_URL`, onglet **Variables** du service), puis exécuter
+   depuis la racine du dépôt :
+
+```bash
+psql "$DATABASE_PUBLIC_URL" -v app_password="$CPLAN_APP_DB_PASSWORD" \
+     -f infra/railway/create-runtime-role.sql
+```
+
+   Sans `psql` installé, la même commande passe par Docker :
+
+```bash
+docker run --rm -i postgres:16-alpine psql "$DATABASE_PUBLIC_URL" \
+  -v app_password="$CPLAN_APP_DB_PASSWORD" -f - < infra/railway/create-runtime-role.sql
+```
+
+3. Vérifier la dernière ligne affichée : `super_utilisateur = f`,
+   `contourne_rls = f`, `tables_possedees = 0`.
+
+Le script est idempotent : le rejouer avec un nouveau mot de passe effectue une
+rotation (mettre ensuite à jour la variable partagée et redéployer).
 
 ## 3. Worker Railway
 
-Créer un second service depuis le même dépôt et le nommer `school-fees-worker`.
+Créer un second service depuis le même dépôt et le nommer `csb-worker`.
 
 | Paramètre | Valeur |
 |---|---|
@@ -134,7 +156,8 @@ Créer un second service depuis le même dépôt et le nommer `school-fees-worke
 | Healthcheck | désactivé |
 
 Partager avec lui les mêmes variables PostgreSQL, Redis, Bucket, paiement et
-notification que l’API. Garder un seul worker tant que les tâches ne possèdent
+notification que l’API, y compris `DATABASE_URL` sur le rôle `cplan_app` : le
+worker applique le même garde-fou au démarrage. Garder un seul worker tant que les tâches ne possèdent
 pas de verrou distribué explicite.
 
 ## 4. Préparer Vercel
@@ -164,6 +187,11 @@ Les variables `VITE_*` sont publiques dans le JavaScript du navigateur. Elles
 ne doivent contenir aucun secret. Le mode démo est explicitement désactivé en
 production afin qu'un échec réseau ne connecte jamais un compte fictif.
 
+Sur Vercel, le build **échoue volontairement** si `VITE_API_BASE_URL` manque ou
+n'est pas une URL HTTPS se terminant par `/api/v1`, ou si le mode démo est
+activé en production : sans ce contrôle, le dashboard serait publié mais
+incapable de joindre l'API.
+
 ## 5. Initialiser la première école et son administrateur
 
 Une fois les migrations terminées, renseigner temporairement dans le service API
@@ -188,7 +216,7 @@ Sur Railway, il est préférable de ne pas modifier la variable du service et de
 l'activer uniquement pour la commande distante :
 
 ```bash
-railway ssh --service school-fees-api -- env ALLOW_DEMO_SEED=true node scripts/seed.mjs
+railway ssh --service csb-api -- env ALLOW_DEMO_SEED=true node scripts/seed.mjs
 ```
 
 ## 6. Ordre du premier déploiement
@@ -198,7 +226,7 @@ service API dans un fichier temporaire hors dépôt, les contrôler sans affiche
 leurs secrets, puis supprimer le fichier :
 
 ```bash
-railway variables --service school-fees-api --environment production --kv > /tmp/csb-api.env
+railway variables --service csb-api --environment production --kv > /tmp/csb-api.env
 pnpm deployment:validate --file /tmp/csb-api.env --target production
 rm /tmp/csb-api.env
 ```
@@ -209,13 +237,17 @@ JWT trop courts, le mode de paiement factice et une configuration Mobile Money
 partielle. Ne fusionner vers `production` qu'après un contrôle réussi.
 
 1. Provisionner PostgreSQL, Redis et le Bucket Railway.
-2. Configurer les variables de l’API et du worker.
-3. Déployer l’API et générer son domaine public.
-4. Exécuter le bootstrap de production.
-5. Déployer Vercel avec `VITE_API_BASE_URL` pointant vers cette API.
-6. Ajouter le domaine Vercel définitif à `CORS_ORIGINS`, puis redéployer l’API.
-7. Démarrer le worker.
-8. Vérifier :
+2. Créer le rôle `cplan_app` (section « Rôle PostgreSQL applicatif ») et la
+   variable partagée `CPLAN_APP_DB_PASSWORD`.
+3. Configurer les variables de l’API et du worker, puis les contrôler avec
+   `pnpm deployment:validate`.
+4. Déployer l’API (le pré-déploiement applique les migrations avec le compte
+   propriétaire) et générer son domaine public.
+5. Exécuter le bootstrap de production.
+6. Déployer Vercel avec `VITE_API_BASE_URL` pointant vers cette API.
+7. Ajouter le domaine Vercel définitif à `CORS_ORIGINS`, puis redéployer l’API.
+8. Démarrer le worker.
+9. Vérifier :
 
 ```text
 https://VOTRE-API.up.railway.app/health

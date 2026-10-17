@@ -1,6 +1,7 @@
 import { loadConfig } from './platform/config.js';
 import { createLogger } from './platform/logger.js';
 import { createDatabase } from './platform/db.js';
+import { assertRuntimeRoleIsRestricted } from './platform/runtime-role.js';
 import { createRedis } from './platform/redis.js';
 import { createStorage } from './platform/storage.js';
 import { createSmsProvider } from './platform/sms.js';
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
   const logger = createLogger(config);
 
   const db = createDatabase(config, logger);
+  await assertRuntimeRoleIsRestricted(db, config, logger);
   const redis = createRedis(config, logger);
   const storage = createStorage(config);
   const sms = createSmsProvider(config, logger);

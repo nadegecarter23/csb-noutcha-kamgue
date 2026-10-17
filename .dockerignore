@@ -1,0 +1,25 @@
+# Contexte de construction de l'image API (infra/docker/Dockerfile.api).
+# Les dépendances sont réinstallées dans l'image : celles du poste (liens
+# Windows, binaires d'une autre plateforme) ne doivent jamais y entrer.
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+
+# Jamais de secret dans une image.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+# Inutile à l'API.
+apps/mobile
+apps/web
+.git
+.github
+docs
+output
+tmp
+tests
+**/*.log

@@ -20,6 +20,8 @@
 | [10-ROADMAP-CSB-NOUTCHA-KAMGUE.md](10-ROADMAP-CSB-NOUTCHA-KAMGUE.md) | Transformation du projet en plateforme complète du CSB, décisions validées et registre de reprise | Avant toute nouvelle modification |
 | [operations/CSB-13-QUALITY-GATES.md](operations/CSB-13-QUALITY-GATES.md) | Playwright, budget du bundle, CI et charge k6 de préproduction | Avant chaque livraison |
 | [operations/CSB-EXTERNAL-COMPLETION.md](operations/CSB-EXTERNAL-COMPLETION.md) | Données, décisions et preuves externes nécessaires pour clôturer CSB-09, CSB-11 et CSB-12 | Avant la mise en service réelle |
+| [operations/DEPLOY-VERCEL-RAILWAY.md](operations/DEPLOY-VERCEL-RAILWAY.md) | Procédure détaillée Railway (API, worker, base) et Vercel (dashboard) | Pour chaque environnement |
+| [operations/CHECKLIST-MISE-EN-LIGNE.md](operations/CHECKLIST-MISE-EN-LIGNE.md) | Check-list ordonnée de mise en ligne, avec les points encore bloquants | Le jour du déploiement |
 | [operations/CSB-J0-J30-REGISTER.md](operations/CSB-J0-J30-REGISTER.md) | Registre remplissable de surveillance et bilan après mise en production | De J0 à J30 |
 
 ### Documents de phase

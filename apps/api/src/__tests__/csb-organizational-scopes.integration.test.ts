@@ -7,6 +7,9 @@ import {
   testDatabase,
 } from './helpers/test-app.js';
 import { hashPassword } from '../platform/crypto.js';
+import { assertRuntimeRoleIsRestricted } from '../platform/runtime-role.js';
+import type { AppConfig } from '../platform/config.js';
+import type { Logger } from 'pino';
 import { runWithContext, type AccessScopeContext } from '../platform/request-context.js';
 import { withSchoolScope } from '../platform/school-scope.js';
 
@@ -279,6 +282,17 @@ describe('CSB-01 à CSB-03 — organisation et cloisonnement interne', () => {
     } finally {
       await app.close();
     }
+  });
+
+  it('refuse de démarrer en production avec un compte qui contourne la RLS', async () => {
+    const production = { isProduction: true } as AppConfig;
+    const logger = { warn: () => undefined } as unknown as Logger;
+    await expect(assertRuntimeRoleIsRestricted(owner, production, logger)).rejects.toThrow(
+      /contourne la RLS/,
+    );
+    await expect(
+      assertRuntimeRoleIsRestricted(appRole, production, logger),
+    ).resolves.toBeUndefined();
   });
 
   it('la portée établissement conserve la vision complète', async () => {

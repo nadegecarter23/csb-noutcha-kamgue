@@ -1,6 +1,7 @@
 import { loadConfig } from './platform/config.js';
 import { createLogger } from './platform/logger.js';
 import { createDatabase } from './platform/db.js';
+import { assertRuntimeRoleIsRestricted } from './platform/runtime-role.js';
 import { createRedis } from './platform/redis.js';
 import { createStorage } from './platform/storage.js';
 import { createSmsProvider } from './platform/sms.js';
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config).child({ process: 'worker' });
   const db = createDatabase(config, logger);
+  await assertRuntimeRoleIsRestricted(db, config, logger);
   const redis = createRedis(config, logger);
   const audit = createAuditService(db);
   const payments = createPaymentsService(db, audit);
